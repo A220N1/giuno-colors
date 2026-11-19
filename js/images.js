@@ -1,0 +1,109 @@
+// Pictures drawn into free drawings: stickers (OpenMoji emojis and the profile animals) and the
+// outlines of a colouring page painted freely. Each loads once; a drawing waits for its own.
+import { drawings } from './drawings.js';
+
+const PAGE_W = 800, PAGE_H = 1000;
+const OUTLINE_PX = 2;  // pixels per page unit of a colouring page's outlines
+
+export const EMOJI_STAMPS = [
+  '2B50', '2764', '1F308', '2600', '1F319', '1F338', '1F33B', '1F98B', '1F984', '1F41E', '1F422', '1F42C', '1F419', '1F995',
+  '1F431', '1F436', '1F43C', '1F427', '1F388', '1F382', '1F9C1', '1F366', '1F353', '1F451', '1F680', '1F3F0', '1F381',
+];
+export const ANIMAL_STAMPS = ['fox', 'cat', 'rabbit', 'bear', 'owl', 'hedgehog', 'fawn', 'squirrel', 'mouse', 'frog',
+  'red-panda', 'dog', 'seal', 'duck', 'lamb'];
+// Emojis are keyed 'e' + their code, animals by their name.
+export const STAMPS = [...EMOJI_STAMPS.map((c) => 'e' + c), ...ANIMAL_STAMPS];
+export const isAnimal = (k) => !k.startsWith('e');
+export const stampUrl = (k) => (isAnimal(k) ? `avatars/${k}.svg` : `stamps/${k.slice(1)}.svg`);
+
+const stamps = new Map();
+
+function loadStamp(k) {
+  let e = stamps.get(k);
+  if (!e) {
+    const img = new Image();
+    e = { img, ok: false };
+    e.ready = new Promise((resolve) => {
+      img.onload = () => { e.ok = true; resolve(); };
+      img.onerror = () => resolve();
+    });
+    img.src = stampUrl(k);
+    stamps.set(k, e);
+  }
+  return e;
+}
+
+export function stampImage(k) {
+  const e = loadStamp(k);
+  return e.ok ? e.img : null;
+}
+
+// The outlines of a colouring page, white made transparent, fitted in the middle of the page.
+const bases = new Map();
+
+function outlineSvg(d, width) {
+  const root = d.root.cloneNode(true);
+  const [, , vw, vh] = d.vb;
+  const sw = 2.6 * Math.max(vw, vh) / 1000;
+  // zones stay white, so they hide the outlines under them as in the colouring screen
+  for (const z of root.querySelectorAll('[data-c]')) {
+    z.setAttribute('style', `fill:#ffffff;stroke:#4a4a4a;stroke-width:${sw};stroke-linejoin:round`);
+  }
+  root.setAttribute('width', width);
+  root.setAttribute('height', Math.round(width * vh / vw));
+  return new XMLSerializer().serializeToString(root);
+}
+
+async function buildBase(d) {
+  const [, , vw, vh] = d.vb;
+  const s = Math.min(PAGE_W * 0.96 / vw, PAGE_H * 0.96 / vh);
+  const box = [(PAGE_W - vw * s) / 2, (PAGE_H - vh * s) / 2, vw * s, vh * s];
+  const cw = Math.round(box[2] * OUTLINE_PX), ch = Math.round(box[3] * OUTLINE_PX);
+  const url = URL.createObjectURL(new Blob([outlineSvg(d, cw)], { type: 'image/svg+xml' }));
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = cw; canvas.height = ch;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.drawImage(img, 0, 0, cw, ch);
+    // undo the white paper: each pixel becomes the ink that, laid on white, gives that pixel
+    const im = ctx.getImageData(0, 0, cw, ch), px = im.data;
+    for (let i = 0; i < px.length; i += 4) {
+      const a = 255 - Math.min(px[i], px[i + 1], px[i + 2]);
+      if (a === 0) { px[i + 3] = 0; continue; }
+      for (let c = 0; c < 3; c++) px[i + c] = Math.round(255 - (255 - px[i + c]) * 255 / a);
+      px[i + 3] = a;
+    }
+    ctx.putImageData(im, 0, 0);
+    return { canvas, box };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// The outlines of colouring page `id`, or null if there is no such page.
+export function loadBase(id) {
+  if (!id) return Promise.resolve(null);
+  let p = bases.get(id);
+  if (!p) {
+    const d = drawings.find((x) => x.id === id);
+    p = d ? buildBase(d).catch((e) => { console.error('outlines not made:', e); return null; }) : Promise.resolve(null);
+    bases.set(id, p);
+  }
+  return p;
+}
+
+// Everything a saved drawing needs before it can be drawn: its stickers and its colouring page.
+export async function prepareArt(ops, baseId) {
+  const keys = new Set(ops.filter((op) => op.t === 'stamp').map((op) => op.k));
+  await Promise.all([...keys].map((k) => loadStamp(k).ready));
+  return loadBase(baseId);
+}
+
+export function preloadStamps() {
+  return Promise.all(STAMPS.map((k) => loadStamp(k).ready));
+}

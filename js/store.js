@@ -84,6 +84,30 @@ export function setProgress(profileId, drawingKey, list) {
   write(`progress.${profileId}.${drawingKey}`, list);
 }
 
+// Everything kept in localStorage under our prefix, as stored (JSON text), for a backup.
+export function storageEntries() {
+  const out = {};
+  if (!ok) { for (const [k, v] of mem) out[k] = JSON.stringify(v); return out; }
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(PREFIX) && k !== PREFIX + 'probe') out[k.slice(PREFIX.length)] = localStorage.getItem(k);
+  }
+  return out;
+}
+
+// Replace everything under our prefix by the entries of a backup.
+export function replaceStorage(entries) {
+  mem.clear();
+  if (!ok) { for (const [k, v] of Object.entries(entries)) mem.set(k, JSON.parse(v)); return; }
+  const doomed = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(PREFIX)) doomed.push(k);
+  }
+  doomed.forEach((k) => localStorage.removeItem(k));
+  for (const [k, v] of Object.entries(entries)) localStorage.setItem(PREFIX + k, v);
+}
+
 // Ask the browser not to clear our data when space runs low (granted silently to installed apps).
 export function requestPersistence() {
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* unsupported */ }

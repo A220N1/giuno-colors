@@ -4,6 +4,7 @@ import { drawings, instantiate, paint } from './drawings.js';
 import { getProgress, storageOk } from './store.js';
 import { listArt, newArtId } from './artstore.js';
 import { renderFlat } from './art.js';
+import { prepareArt } from './images.js';
 import { t, titleOf, categoryOf } from './i18n.js';
 
 const LEVELS = ['', 'Facile', 'Moyen', 'Difficile'];
@@ -25,15 +26,17 @@ export function showGallery(profile, onOpen, onWho, onArt) {
   row.append(add);
   list.append(el('h2', 'section', t('Mes dessins')), row);
   const token = shown = {};
-  listArt(profile.id).then((records) => {
+  listArt(profile.id).then(async (records) => {
     if (shown !== token) return;
     for (const r of records) {
       const card = el('button', 'card art-card');
-      const thumb = renderFlat(r.ops, 360);
-      thumb.className = 'thumb';
-      card.append(thumb);
       card.addEventListener('click', () => onArt(r.id));
       row.append(card);
+      const base = await prepareArt(r.ops, r.base);  // its stickers and colouring page, if any
+      if (shown !== token) return;
+      const thumb = renderFlat(r.ops, 360, base);
+      thumb.className = 'thumb';
+      card.append(thumb);
     }
   }).catch((e) => console.error('drawings not listed:', e));
 

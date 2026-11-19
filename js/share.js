@@ -45,7 +45,12 @@ export async function shareDrawing(d, filled) {
 }
 
 export async function sharePng(blob, name, title) {
-  const file = new File([blob], name, { type: 'image/png' });
+  return shareFile(blob, name, title, 'image/png');
+}
+
+// Through the share sheet when the phone offers one for this kind of file, else as a download.
+export async function shareFile(blob, name, title, type) {
+  const file = new File([blob], name, { type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title });

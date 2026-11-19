@@ -1,9 +1,11 @@
 // The free drawing screen: a blank page with brush, paint bucket, eraser, shapes, undo and redo.
 import { $, el, showScreen, vibrate, inkFor, confirmDialog } from './util.js';
-import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, MIRRORS, mirrorPoints, drawOp, drawPreview, renderLayers, renderFlat, clearCanvas, fillRegion } from './art.js';
+import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, MIRRORS, BRUSHES, BRUSH_NAMES, PIECEWISE, BACKGROUNDS,
+  backgroundOf, sameBackground, paperColor, drawBackground, drawBase, mirrorPoints, drawOp, drawPreview, renderLayers, renderFlat, clearCanvas, fillRegion } from './art.js';
 import { getArt, putArt, deleteArt } from './artstore.js';
 import { sharePng, canvasPng } from './share.js';
 import { sparkler } from './sparkles.js';
+import { STAMPS, stampUrl, isAnimal, prepareArt, preloadStamps } from './images.js';
 import { t } from './i18n.js';
 
 const TAP_SLOP_PX = 10;     // finger movement still counted as a tap
@@ -15,26 +17,35 @@ const SHAPE_NAMES = { circle: 'Rond', square: 'Carré', triangle: 'Triangle', st
 const SPARKLE_EVERY_PX = 9;  // finger travel between two stars of a rainbow stroke
 const MIRROR_NAMES = { 1: 'Sans miroir', 2: 'Miroir gauche-droite', 4: 'Miroir en quatre', 6: 'Kaléidoscope' };
 const DOT_PX = [6, 11, 18, 28];  // the sizes as shown on their buttons
+const STAMP_SIZES = [80, 130, 190, 260];  // side of a sticker dropped by a tap, by size
+const STAMP_MIN = 30;  // a drag smaller than this drops a sticker of the chosen size instead
+const MAX_ZOOM = 4;
 
 const stage = $('#draw-stage');
 const sheet = stage.querySelector('.sheet');
-const [fillCanvas, lineCanvas, liveCanvas] = sheet.querySelectorAll('canvas');
+const canvases = [...sheet.querySelectorAll('canvas')];
+const paperEl = sheet.querySelector('.paper');
+const guidesEl = sheet.querySelector('.guides');
+const [bgCanvas, fillCanvas, lineCanvas, baseCanvas, liveCanvas] = canvases;
+const back = bgCanvas.getContext('2d');
 const fills = fillCanvas.getContext('2d');
 const lines = lineCanvas.getContext('2d');
+const baseLayer = baseCanvas.getContext('2d');
 const live = liveCanvas.getContext('2d');
 const pop = $('#draw-pop');
 const sparkles = sparkler($('#sparkles'));
-const tool = { kind: 'brush', color: COLORS[0], size: 1, shape: 'circle', mirror: 1 };  // kept from one drawing to the next
+const tool = { kind: 'brush', brush: 'marker', color: COLORS[0], size: 1, shape: 'circle', stamp: STAMPS[0], mirror: 1 };  // kept from one drawing to the next
 let A = null;  // the drawing on screen
 let pen = null;
 let onBack = () => {};
 
-export async function openDraw(id, profileId, back) {
-  onBack = back;
+// `baseId`: a colouring page to paint freely, for a new drawing.
+export async function openDraw(id, profileId, goBack, baseId = '') {
+  onBack = goBack;
   showScreen('draw');
   closePop();
   const a = { id, profileId, ops: [], redo: [], created: Date.now(), saved: false, dirty: false, loading: true,
-    s: 1, k: 1, W: 0, H: 0, timer: 0 };
+    s: 1, k: 1, W: 0, H: 0, timer: 0, baseId, base: null, paper: '#ffffff', replay: null };
   A = a;
   layout();
   updateTools();
@@ -43,7 +54,9 @@ export async function openDraw(id, profileId, back) {
   try { rec = await getArt(id); } catch (e) { console.error('drawing not loaded:', e); }
   if (A !== a) return;
   if (rec && rec.profile !== profileId) { A = null; onBack(); return; }
-  if (rec) { a.ops = rec.ops; a.created = rec.created; a.saved = true; }
+  if (rec) { a.ops = rec.ops; a.created = rec.created; a.saved = true; a.baseId = rec.base || ''; }
+  a.base = await prepareArt(a.ops, a.baseId);
+  if (A !== a) return;
   a.loading = false;
   renderAll();
   updateButtons();
@@ -52,32 +65,65 @@ export async function openDraw(id, profileId, back) {
 export function leaveDraw() {
   if (!A) return;
   flushSave();
+  stopReplay();
   A = null;
   pen = null;
   closePop();
   sparkles.clear();
 }
 
+// The layers cover the whole drawing area and show the page at A.s * zoom, moved by (ox, oy):
+// only what is on screen is drawn, whatever the zoom.
 function layout() {
   const r = stage.getBoundingClientRect();
   A.W = r.width; A.H = r.height;
-  const s = Math.min(r.width / PAGE_W, r.height / PAGE_H) * 0.96;
-  const w = PAGE_W * s, h = PAGE_H * s;
-  Object.assign(sheet.style, { left: (r.width - w) / 2 + 'px', top: (r.height - h) / 2 + 'px', width: w + 'px', height: h + 'px' });
-  const dpr = window.devicePixelRatio || 1;
-  for (const c of [fillCanvas, lineCanvas, liveCanvas]) {
-    c.width = Math.max(1, Math.round(w * dpr));
-    c.height = Math.max(1, Math.round(h * dpr));
+  A.s = Math.min(r.width / PAGE_W, r.height / PAGE_H) * 0.96;
+  A.dpr = window.devicePixelRatio || 1;
+  for (const c of canvases) {
+    c.width = Math.max(1, Math.round(r.width * A.dpr));
+    c.height = Math.max(1, Math.round(r.height * A.dpr));
   }
-  A.s = s;
-  A.k = fillCanvas.width / PAGE_W;
   sparkles.resize(r.width, r.height);
+  fitView();
   renderAll();
 }
 
+function fitView() {
+  A.view = { z: 1, ox: (A.W - PAGE_W * A.s) / 2, oy: (A.H - PAGE_H * A.s) / 2 };
+  applyView();
+}
+
+// Keep the zoomed page over the middle of the screen.
+function clampView(v) {
+  const z = Math.min(MAX_ZOOM, Math.max(1, v.z));
+  if (z <= 1.001) return { z: 1, ox: (A.W - PAGE_W * A.s) / 2, oy: (A.H - PAGE_H * A.s) / 2 };
+  const w = PAGE_W * A.s * z, h = PAGE_H * A.s * z;
+  return { z, ox: Math.min(A.W / 2, Math.max(A.W / 2 - w, v.ox)), oy: Math.min(A.H / 2, Math.max(A.H / 2 - h, v.oy)) };
+}
+
+function applyView() {
+  const { z, ox, oy } = A.view, scale = A.s * z;
+  A.k = [A.dpr * scale, A.dpr * ox, A.dpr * oy];
+  const box = { left: ox + 'px', top: oy + 'px', width: PAGE_W * scale + 'px', height: PAGE_H * scale + 'px' };
+  Object.assign(paperEl.style, box);
+  Object.assign(guidesEl.style, box);
+  $('#zoom-fit').hidden = z <= 1.001;
+}
+
+const scale = () => A.s * A.view.z;
+
 function renderAll() {
+  const bg = backgroundOf(A.ops);
+  A.paper = paperColor(bg);
+  drawBackground(back, bg, A.k);
   renderLayers(fills, lines, A.ops, A.k);
+  drawBase(baseLayer, A.base, A.k);
   clearCanvas(live, A.k);
+}
+
+// One more operation on screen: a background redraws its layer, the rest draws on top.
+function showOp(op) {
+  if (op.t === 'bg') renderAll(); else drawOp(fills, lines, op);
 }
 
 function onResize() {
@@ -92,7 +138,7 @@ addEventListener('resize', onResize);
 function commit(op) {
   A.ops.push(op);
   A.redo = [];
-  drawOp(fills, lines, op);
+  showOp(op);
   changed();
 }
 
@@ -109,7 +155,9 @@ function flushSave() {
   A.dirty = false;
   const fail = (e) => console.error('drawing not saved:', e);
   if (A.ops.length) {
-    putArt({ id: A.id, profile: A.profileId, created: A.created, updated: Date.now(), ops: A.ops.slice() }).catch(fail);
+    const rec = { id: A.id, profile: A.profileId, created: A.created, updated: Date.now(), ops: A.ops.slice() };
+    if (A.baseId) rec.base = A.baseId;
+    putArt(rec).catch(fail);
     A.saved = true;
   } else if (A.saved) {  // everything undone: an empty page is not kept
     deleteArt(A.id).catch(fail);
@@ -119,6 +167,7 @@ function flushSave() {
 document.addEventListener('visibilitychange', () => { if (document.hidden) flushSave(); });
 
 function undo() {
+  stopReplay();
   if (!A || A.loading || !A.ops.length) return;
   A.redo.push(A.ops.pop());
   renderAll();
@@ -126,25 +175,112 @@ function undo() {
 }
 
 function redo() {
+  stopReplay();
   if (!A || A.loading || !A.redo.length) return;
   const op = A.redo.pop();
   A.ops.push(op);
-  drawOp(fills, lines, op);
+  showOp(op);
   changed();
 }
 
 function updateButtons() {
   $('#undo').disabled = !A || !A.ops.length;
   $('#redo').disabled = !A || !A.redo.length;
+  $('#replay').disabled = !A || !A.ops.some((op) => op.t !== 'bg');
 }
 
-// Gestures: one finger draws; any other finger on the page meanwhile is ignored.
+// Gestures: one finger draws; two fingers zoom and move the page (the stroke they interrupt is
+// dropped); a wheel zooms on a computer.
 function toPage(e) {
-  return [(e.clientX - A.left) / A.s, (e.clientY - A.top) / A.s];
+  return [(e.clientX - A.left - A.view.ox) / scale(), (e.clientY - A.top - A.view.oy) / scale()];
+}
+
+const fingers = new Map();
+let pinch = null;
+
+function pinchState() {
+  const [a, b] = [...fingers.values()];
+  return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2 - A.left, my: (a.y + b.y) / 2 - A.top };
+}
+
+function startPinch() {
+  if (pen) { pen = null; clearLive(); }
+  closePop();
+  pinch = { ...pinchState(), v0: { ...A.view }, v: { ...A.view } };
+}
+
+// While the fingers move, the layers are only stretched; they are drawn again when the fingers lift.
+function movePinch() {
+  const now = pinchState(), v0 = pinch.v0;
+  const z = v0.z * now.d / pinch.d;
+  const px = (pinch.mx - v0.ox) / (A.s * v0.z), py = (pinch.my - v0.oy) / (A.s * v0.z);
+  pinch.v = clampView({ z, ox: now.mx - px * A.s * z, oy: now.my - py * A.s * z });
+  const r = pinch.v.z / v0.z;
+  sheet.style.transform = `translate(${pinch.v.ox - r * v0.ox}px, ${pinch.v.oy - r * v0.oy}px) scale(${r})`;
+}
+
+function endPinch() {
+  A.view = pinch.v;
+  pinch = null;
+  sheet.style.transform = '';
+  applyView();
+  renderAll();
 }
 
 function boxOf(x0, y0, x1, y1) {
   return [Math.round(Math.min(x0, x1)), Math.round(Math.min(y0, y1)), Math.round(Math.abs(x1 - x0)), Math.round(Math.abs(y1 - y0))];
+}
+
+// A sticker stays square: the drag sets its side from the corner where it started.
+function stampBox(x0, y0, x1, y1) {
+  const side = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+  if (side < STAMP_MIN) return null;
+  return boxOf(x0, y0, x1 < x0 ? x0 - side : x0 + side, y1 < y0 ? y0 - side : y0 + side);
+}
+
+// Replay: the drawing draws itself again in a few seconds, stroke by stroke.
+const replayCost = (op) => (op.p ? op.p.length / 2 : 12);
+
+function replay() {
+  if (!A || A.loading || !A.ops.length) return;
+  stopReplay();
+  closePop();
+  const a = A, ops = a.ops.slice();
+  const total = ops.reduce((n, op) => n + replayCost(op), 0);
+  const duration = Math.min(10000, Math.max(2500, total * 5));
+  // the page starts blank on its final background
+  clearCanvas(fills, a.k); clearCanvas(lines, a.k); clearCanvas(live, a.k);
+  const R = { i: 0, done: 0, from: 0, t0: performance.now(), raf: 0 };
+  a.replay = R;
+  stage.classList.add('replaying');
+  const step = (now) => {
+    if (A !== a || a.replay !== R) return;
+    const target = total * Math.min(1, (now - R.t0) / duration);
+    while (R.i < ops.length && R.done + replayCost(ops[R.i]) <= target) {
+      if (ops[R.i].t !== 'bg') drawOp(fills, lines, ops[R.i]);
+      R.done += replayCost(ops[R.i]);
+      R.i++;
+      R.from = 0;
+      clearCanvas(live, a.k);
+    }
+    if (R.i >= ops.length) { stopReplay(); return; }
+    const op = ops[R.i];
+    if (op.p) {
+      const part = { ...op, p: op.p.slice(0, 2 * Math.max(1, Math.floor(target - R.done))) };
+      if (op.t === 'line' && PIECEWISE.has(op.k)) R.from = drawPreview(live, part, R.from);
+      else { clearCanvas(live, a.k); drawPreview(live, op.t === 'erase' ? { ...part, paper: a.paper } : part); }
+    }
+    R.raf = requestAnimationFrame(step);
+  };
+  R.raf = requestAnimationFrame(step);
+}
+
+function stopReplay() {
+  if (!A || !A.replay) return;
+  cancelAnimationFrame(A.replay.raf);
+  A.replay = null;
+  stage.classList.remove('replaying');
+  renderAll();
 }
 
 function addPoint(x, y) {
@@ -168,33 +304,44 @@ const copiesOf = (x, y) => (tool.mirror > 1 ? mirrorPoints(tool.mirror, x, y) : 
 
 // Stars around a point of the page and its mirror images, in the hue the rainbow has there.
 function sparkleAt(x, y, turn, n = 1, spread = 0) {
-  const r = stage.getBoundingClientRect(), sr = sheet.getBoundingClientRect();
-  const reach = spread || SIZES[tool.size] * A.s / 2 + 6;
+  const reach = spread || SIZES[tool.size] * scale() / 2 + 6;
   for (const [px, py] of copiesOf(x, y)) {
-    const cx = sr.left - r.left + px * A.s, cy = sr.top - r.top + py * A.s;
+    const cx = A.view.ox + px * scale(), cy = A.view.oy + py * scale();
     if (n === 1) sparkles.emit(cx, cy, turn, reach);
     else sparkles.burst(cx, cy, turn, n, reach);
   }
 }
 
 stage.addEventListener('pointerdown', (e) => {
-  if (!A || A.loading || pen || e.target.closest('.pop')) return;
-  if (!pop.hidden) { closePop(); return; }  // a tap beside the menu only closes it
-  const r = sheet.getBoundingClientRect();
+  if (!A || A.loading || e.target.closest('.pop, #zoom-fit')) return;
+  const r = stage.getBoundingClientRect();
   A.left = r.left; A.top = r.top;
+  fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   try { stage.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+  if (fingers.size === 2 && !A.replay) { startPinch(); return; }
+  if (fingers.size > 1 || pinch || pen) return;
+  if (A.replay) { stopReplay(); return; }  // a tap during the replay only stops it
+  if (!pop.hidden) { closePop(); return; }  // a tap beside the menu only closes it
   const [x, y] = toPage(e);
   pen = { id: e.pointerId, cx: e.clientX, cy: e.clientY, lx: e.clientX, ly: e.clientY, x, y, sx: x, sy: y,
     moved: false, op: null, len: 0, spark: 0 };
   const w = SIZES[tool.size], start = [Math.round(x), Math.round(y)];
-  if (tool.kind === 'brush') pen.op = mirrorable({ t: 'line', c: tool.color, w, p: start });
+  if (tool.kind === 'brush') {
+    pen.op = mirrorable({ t: 'line', c: tool.color, w, p: start });
+    if (tool.brush !== 'marker') pen.op.k = tool.brush;
+  }
   else if (tool.kind === 'eraser') pen.op = mirrorable({ t: 'erase', w, p: start });
   if (isRainbow(pen.op)) sparkleAt(x, y, 0, 3);
+  pen.from = 0;
+  clearCanvas(live, A.k);
   showLive();
 });
 
 stage.addEventListener('pointermove', (e) => {
-  if (!A || !pen || e.pointerId !== pen.id) return;
+  if (!A) return;
+  if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch) { if (fingers.size >= 2) movePinch(); return; }
+  if (!pen || e.pointerId !== pen.id) return;
   if (Math.hypot(e.clientX - pen.cx, e.clientY - pen.cy) > TAP_SLOP_PX) pen.moved = true;
   if (pen.op && pen.op.p) {
     const all = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
@@ -207,11 +354,16 @@ stage.addEventListener('pointermove', (e) => {
   } else if (tool.kind === 'shape' && pen.moved) {
     const [x, y] = toPage(e);
     pen.op = mirrorable({ t: 'shape', k: tool.shape, c: tool.color, w: SIZES[tool.size], b: boxOf(pen.x, pen.y, x, y) });
+  } else if (tool.kind === 'stamp' && pen.moved) {
+    const b = stampBox(pen.x, pen.y, ...toPage(e));
+    pen.op = b ? mirrorable({ t: 'stamp', k: tool.stamp, b }) : null;
   }
   showLive();
 });
 
 function penUp(e) {
+  fingers.delete(e.pointerId);
+  if (pinch) { if (fingers.size < 2) endPinch(); return; }
   if (!pen || e.pointerId !== pen.id) return;
   const g = pen;
   pen = null;
@@ -224,16 +376,21 @@ function penUp(e) {
     commit(g.op);
   } else if (e.type !== 'pointerup') {
     return;
+  } else if (tool.kind === 'stamp') {
+    const h = STAMP_SIZES[tool.size] / 2;
+    const b = (g.moved && stampBox(g.x, g.y, x, y)) || boxOf(g.x - h, g.y - h, g.x + h, g.y + h);
+    commit(mirrorable({ t: 'stamp', k: tool.stamp, b }));
+    vibrate(12);
   } else if (tool.kind === 'shape') {
     const h = SHAPE_TAP_SIZE / 2;
     const b = g.moved ? boxOf(g.x, g.y, x, y) : boxOf(g.x - h, g.y - h, g.x + h, g.y + h);
     commit(mirrorable({ t: 'shape', k: tool.shape, c: tool.color, w: SIZES[tool.size], b }));
-    if (tool.color === RAINBOW) sparkleAt(b[0] + b[2] / 2, b[1] + b[3] / 2, 0, 18, Math.max(b[2], b[3]) * A.s / 2);
+    if (tool.color === RAINBOW) sparkleAt(b[0] + b[2] / 2, b[1] + b[3] / 2, 0, 18, Math.max(b[2], b[3]) * scale() / 2);
   } else if (tool.kind === 'bucket' && !g.moved) {
     // with a mirror, the mirror images of the tap fill too, in one operation (nonzero rule: two taps
     // in the same area add up instead of cancelling out)
     const loops = [];
-    for (const [px, py] of copiesOf(g.x, g.y)) loops.push(...(fillRegion(A.ops, px, py) || []));
+    for (const [px, py] of copiesOf(g.x, g.y)) loops.push(...(fillRegion(A.ops, px, py, A.base) || []));
     if (loops.length) {
       commit(tool.mirror > 1 ? { t: 'fill', c: tool.color, r: loops, z: 1 } : { t: 'fill', c: tool.color, r: loops });
       vibrate(12);
@@ -245,6 +402,17 @@ stage.addEventListener('pointerup', penUp);
 stage.addEventListener('pointercancel', penUp);
 stage.addEventListener('contextmenu', (e) => e.preventDefault());
 
+stage.addEventListener('wheel', (e) => {
+  if (!A || A.loading || pen || pinch) return;
+  e.preventDefault();
+  const r = stage.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, v = A.view;
+  const z = v.z * Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015));
+  const px = (mx - v.ox) / (A.s * v.z), py = (my - v.oy) / (A.s * v.z);
+  A.view = clampView({ z, ox: mx - px * A.s * z, oy: my - py * A.s * z });
+  applyView();
+  renderAll();
+}, { passive: false });
+
 let liveRaf = 0;
 function showLive() {
   if (!liveRaf) liveRaf = requestAnimationFrame(drawLive);
@@ -252,8 +420,11 @@ function showLive() {
 function drawLive() {
   liveRaf = 0;
   if (!A) return;
+  const op = pen && pen.op;
+  // textured strokes only add their new marks; the others are drawn again whole
+  if (op && op.t === 'line' && PIECEWISE.has(op.k)) { pen.from = drawPreview(live, op, pen.from); return; }
   clearCanvas(live, A.k);
-  if (pen && pen.op) drawPreview(live, pen.op);
+  if (op) drawPreview(live, op.t === 'erase' ? { ...op, paper: A.paper } : op);
 }
 function clearLive() {
   cancelAnimationFrame(liveRaf);
@@ -261,8 +432,33 @@ function clearLive() {
   clearCanvas(live, A.k);
 }
 
-// Toolbar: tools, the shape, mirror and size menus, colours.
+// Toolbar: tools, the brush, shape, mirror and size menus, colours.
 const shapeIcon = (k) => `<svg viewBox="-0.2 -0.2 1.4 1.4" class="shape"><path d="${SHAPES[k]}"/></svg>`;
+
+function stampIcon(k) {
+  const img = el('img', isAnimal(k) ? 'sample round' : 'sample');
+  img.src = stampUrl(k);
+  img.alt = '';
+  img.draggable = false;
+  return img;
+}
+
+// A wave drawn with a kind of brush in the colour in use, as its button.
+function brushSample(kind, px = 40) {
+  const c = document.createElement('canvas');
+  const dpr = window.devicePixelRatio || 1;
+  c.width = c.height = Math.round(px * dpr);
+  c.className = 'sample';
+  const ctx = c.getContext('2d');
+  ctx.setTransform(c.width / 100, 0, 0, c.width / 100, 0, 0);
+  const p = [];
+  for (let i = 0; i <= 24; i++) p.push(Math.round(14 + 72 * i / 24), Math.round(50 - 24 * Math.sin(i / 24 * 2 * Math.PI)));
+  const color = tool.color === '#ffffff' ? '#9e9e9e' : tool.color;  // white would not show on the button
+  const op = { t: 'line', c: color, w: kind === 'hearts' ? 11 : 15, p };
+  if (kind !== 'marker') op.k = kind;
+  drawOp(null, ctx, op);
+  return c;
+}
 
 function mirrorIcon(m) {
   const dot = ([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4"/>`;
@@ -280,7 +476,7 @@ function mirrorIcon(m) {
 
 // Dashed axes over the page while a mirror is on; they are not part of the drawing.
 function updateGuides() {
-  const g = sheet.querySelector('.guides');
+  const g = guidesEl;
   const line = (deg) => {
     const a = deg * Math.PI / 180, dx = Math.cos(a) * 1400, dy = Math.sin(a) * 1400;
     return `<line x1="${(PAGE_W / 2 - dx).toFixed(0)}" y1="${(PAGE_H / 2 - dy).toFixed(0)}" x2="${(PAGE_W / 2 + dx).toFixed(0)}" y2="${(PAGE_H / 2 + dy).toFixed(0)}"/>`;
@@ -300,11 +496,16 @@ function sizeDot(i) {
 
 function updateTools() {
   for (const b of document.querySelectorAll('#draw .tool[data-tool]')) b.classList.toggle('sel', b.dataset.tool === tool.kind);
+  const brushBtn = $('#draw .tool[data-tool="brush"]');
+  brushBtn.replaceChildren(brushSample(tool.brush));
+  brushBtn.setAttribute('aria-label', t('Dessiner : {name}', { name: t(BRUSH_NAMES[tool.brush]) }));
   const shapeBtn = $('#draw .tool[data-tool="shape"]');
   shapeBtn.innerHTML = shapeIcon(tool.shape);
   shapeBtn.setAttribute('aria-label', t('Formes : {name}', { name: t(SHAPE_NAMES[tool.shape]) }));
   $('#size').replaceChildren(sizeDot(tool.size));
   $('#size').setAttribute('aria-label', t('Épaisseur'));
+  const stampBtn = $('#draw .tool[data-tool="stamp"]');
+  stampBtn.replaceChildren(stampIcon(tool.stamp));
   const mirrorBtn = $('#mirror');
   mirrorBtn.innerHTML = mirrorIcon(tool.mirror);
   mirrorBtn.classList.toggle('on', tool.mirror > 1);
@@ -316,8 +517,43 @@ function updateTools() {
 function openPop(kind) {
   if (!pop.hidden && pop.dataset.kind === kind) { closePop(); return; }
   pop.dataset.kind = kind;
+  pop.classList.remove('grid');
   pop.replaceChildren();
-  if (kind === 'mirror') {
+  if (kind === 'stamp') {
+    pop.classList.add('grid');
+    for (const k of STAMPS) {
+      const b = el('button', 'tool' + (k === tool.stamp ? ' sel' : ''));
+      b.append(stampIcon(k));
+      b.dataset.stamp = k;
+      b.addEventListener('click', () => { tool.stamp = k; tool.kind = 'stamp'; closePop(); updateTools(); });
+      pop.append(b);
+    }
+  } else if (kind === 'bg') {
+    const current = backgroundOf(A ? A.ops : []);
+    for (const bg of BACKGROUNDS) {
+      const b = el('button', 'tool paper' + (sameBackground(bg, current) ? ' sel' : ''));
+      const c = document.createElement('canvas');
+      c.width = 80; c.height = 100;
+      c.className = 'sample';
+      drawBackground(c.getContext('2d'), bg, 0.1);
+      b.append(c);
+      b.dataset.bg = bg.k + (bg.c || '');
+      b.addEventListener('click', () => {
+        closePop();
+        if (A && !A.loading && !sameBackground(bg, backgroundOf(A.ops))) commit({ t: 'bg', ...bg });
+      });
+      pop.append(b);
+    }
+  } else if (kind === 'brush') {
+    for (const k of BRUSHES) {
+      const b = el('button', 'tool' + (k === tool.brush ? ' sel' : ''));
+      b.append(brushSample(k));
+      b.dataset.brush = k;
+      b.setAttribute('aria-label', t(BRUSH_NAMES[k]));
+      b.addEventListener('click', () => { tool.brush = k; tool.kind = 'brush'; closePop(); updateTools(); });
+      pop.append(b);
+    }
+  } else if (kind === 'mirror') {
     for (const m of MIRRORS) {
       const b = el('button', 'tool' + (m === tool.mirror ? ' sel' : ''));
       b.innerHTML = mirrorIcon(m);
@@ -352,8 +588,10 @@ function closePop() { pop.hidden = true; }
 
 for (const b of document.querySelectorAll('#draw .tool[data-tool]')) {
   b.addEventListener('click', () => {
+    const again = tool.kind === b.dataset.tool;
     tool.kind = b.dataset.tool;
-    if (tool.kind === 'shape') openPop('shape'); else closePop();
+    // the brush draws at once; its menu opens on a second tap, so a first stroke is never lost
+    if (tool.kind === 'shape' || tool.kind === 'stamp' || (tool.kind === 'brush' && again)) openPop(tool.kind); else closePop();
     updateTools();
   });
 }
@@ -378,13 +616,16 @@ for (const c of [...COLORS, RAINBOW]) {
 async function share() {
   if (!A || !A.ops.length) return;
   try {
-    await sharePng(await canvasPng(renderFlat(A.ops, 1200)), `giuno-dessin-${A.id}.png`, t('Mon dessin'));
+    await sharePng(await canvasPng(renderFlat(A.ops, 1200, A.base)), `giuno-dessin-${A.id}.png`, t('Mon dessin'));
   } catch (e) {
     console.error('share failed:', e);
   }
 }
 
 $('#draw-back').addEventListener('click', () => onBack());
+$('#zoom-fit').addEventListener('click', () => { if (A) { fitView(); renderAll(); } });
+$('#replay').addEventListener('click', () => { if (A && A.replay) stopReplay(); else replay(); });
+$('#draw-bg').addEventListener('click', () => { stopReplay(); openPop('bg'); });
 $('#undo').addEventListener('click', undo);
 $('#redo').addEventListener('click', redo);
 $('#draw-share').addEventListener('click', share);
@@ -405,9 +646,13 @@ export const debug = {
   state: () => A,
   tool,
   toClient(x, y) {
-    const r = sheet.getBoundingClientRect();
-    return [r.left + x * A.s, r.top + y * A.s];
+    const r = stage.getBoundingClientRect();
+    return [r.left + A.view.ox + x * scale(), r.top + A.view.oy + y * scale()];
   },
   flushSave,
   sparkles,
+  replay,
+  stopReplay,
 };
+
+preloadStamps();
