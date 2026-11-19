@@ -33,11 +33,15 @@ export function showGallery(profile, onOpen, onWho, onArt) {
       const card = el('button', 'card art-card');
       card.addEventListener('click', () => onArt(r.id));
       row.append(card);
-      const base = await prepareArt(r.ops, r.base);  // its stickers and colouring page, if any
-      if (shown !== token) return;
-      const thumb = renderFlat(r.ops, 360, base);
-      thumb.className = 'thumb';
-      card.append(thumb);
+      try {
+        const base = await prepareArt(r.ops, r.base);  // its stickers and colouring page, if any
+        if (shown !== token) return;
+        const thumb = renderFlat(r.ops, 360, base);
+        thumb.className = 'thumb';
+        card.append(thumb);
+      } catch (e) {
+        console.error('thumbnail not drawn:', e);  // one drawing must not stop the gallery
+      }
     }
   }).catch((e) => console.error('drawings not listed:', e));
 

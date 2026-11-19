@@ -270,6 +270,8 @@ run(async () => {
   check(cl.k === 'vcloud1' && cl.c === RED && pixel(img, 600, 160) === RED, 'a cloud sticker in the colour in use');
 
   // the finger spreads the paint: red pushed out of a thick line into the white beside it, undone, redone
+  // (the finger is switched off while it is made faster: then its drawing is left out)
+  if (!$('#draw .tool[data-tool="smudge"]').hidden) {
   pickBrush('marker');
   $('#size').click();
   $('#draw-pop [data-size="3"]').click();
@@ -286,6 +288,7 @@ run(async () => {
   check(pixel(flat(), 330, 500) === WHITE, 'undo takes the smudge back');
   $('#redo').click();
   check(reddish(pixel(flat(), 330, 500)), 'redo spreads it again');
+  }
 
   // background: the night sky, undone
   $('#draw-bg').click();

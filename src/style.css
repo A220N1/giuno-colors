@@ -144,6 +144,7 @@ canvas.thumb { aspect-ratio: 4 / 5; }
 .toolrow { display: flex; gap: 6px; }
 .tool { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; }
 .toolrow .tool { width: clamp(38px, calc((100vw - 64px) / 8), 52px); height: clamp(38px, calc((100vw - 64px) / 8), 52px); }
+.toolrow .tool[hidden] { display: none !important; }
 .tool img.sample, .tool canvas.sample.stamp { width: 36px; height: 36px; display: block; }
 .tool img.sample.round { border-radius: 50%; }
 .tool.more { position: relative; }
