@@ -222,45 +222,93 @@ export function drawBackground(ctx, bg, k) {
 }
 
 // Finger: soft dabs along the stroke, each made of the paint a little behind it, laid at partial
-// opacity. Done on the layer's own pixels, whatever its scale, so it replays the same way.
+// opacity, so the paint is dragged along. Worked out on the layer's pixels in memory, with one read
+// and one write per stroke: copying between canvases dab by dab froze phones (0.8.0).
 const SMUDGE_KEEP = 0.6;
-let dab = null;
+const SMUDGE_WORK = 4e6;  // pixels blended per stroke and layer at most (about 50 ms on a phone)
+const brushes = new Map();  // radius in pixels -> weights of a soft round dab
 
-function smudgeLayer(ctx, op, from) {
+function dabWeights(R) {
+  let w = brushes.get(R);
+  if (!w) {
+    const n = 2 * R + 1;
+    w = new Float32Array(n * n);
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const d = Math.hypot(i - R, j - R) / R;
+        w[j * n + i] = d >= 1 ? 0 : SMUDGE_KEEP * (d < 0.6 ? 1 : 1 - (d - 0.6) / 0.4);
+      }
+    }
+    brushes.set(R, w);
+  }
+  return w;
+}
+
+// `page`: the page's box on the layer, in pixels; the finger never drags paint out of it.
+function smudgeLayer(ctx, op, from, page) {
   if (op.p.length < 4) return from;  // a tap has no direction to spread the paint along
   const t = ctx.getTransform(), scale = Math.hypot(t.a, t.b);
-  const R = Math.max(1, Math.round(op.w / 2 * scale)), size = 2 * R;
-  if (!dab) dab = document.createElement('canvas');
-  if (dab.width < size || dab.height < size) { dab.width = size; dab.height = size; }
-  const d = dab.getContext('2d');
+  const R = Math.max(1, Math.round(op.w / 2 * scale)), n = 2 * R + 1;
   const lag = Math.max(1.5, op.w * 0.3);
-  return along(op.p, Math.max(1, op.w * 0.12), from, (k, x, y, nx, ny) => {
+  const dabs = [];
+  const next = along(op.p, Math.max(1, op.w * 0.2), from, (k, x, y, nx, ny) => {
     // the paint comes from `lag` units back along the stroke (its direction is (ny, -nx))
     const px = x - ny * lag, py = y + nx * lag;
-    const sx = t.a * px + t.c * py + t.e, sy = t.b * px + t.d * py + t.f;
-    const dx = t.a * x + t.c * y + t.e, dy = t.b * x + t.d * y + t.f;
-    d.globalCompositeOperation = 'copy';
-    d.drawImage(ctx.canvas, sx - R, sy - R, size, size, 0, 0, size, size);
-    d.globalCompositeOperation = 'destination-in';
-    const g = d.createRadialGradient(R, R, 0, R, R, R);
-    g.addColorStop(0, 'rgba(0,0,0,1)');
-    g.addColorStop(0.6, 'rgba(0,0,0,0.8)');
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    d.fillStyle = g;
-    d.fillRect(0, 0, size, size);
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = SMUDGE_KEEP;
-    ctx.drawImage(dab, 0, 0, size, size, dx - R, dy - R, size, size);
-    ctx.restore();
+    dabs.push([Math.round(t.a * px + t.c * py + t.e), Math.round(t.b * px + t.d * py + t.f),
+      Math.round(t.a * x + t.c * y + t.e), Math.round(t.b * x + t.d * y + t.f)]);
   });
+  // a bounded amount of work per stroke, whatever its length and the zoom: past it, dabs are skipped
+  const every = Math.max(1, Math.ceil(dabs.length * n * n / SMUDGE_WORK));
+  if (every > 1) for (let i = dabs.length - 1; i >= 0; i--) if (i % every) dabs.splice(i, 1);
+  const W = ctx.canvas.width, H = ctx.canvas.height;
+  const [px0, py0, px1, py1] = [Math.max(0, page[0]), Math.max(0, page[1]), Math.min(W, page[2]), Math.min(H, page[3])];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [sx, sy, dx, dy] of dabs) {
+    x0 = Math.min(x0, sx, dx); y0 = Math.min(y0, sy, dy); x1 = Math.max(x1, sx, dx); y1 = Math.max(y1, sy, dy);
+  }
+  x0 = Math.max(px0, x0 - R); y0 = Math.max(py0, y0 - R); x1 = Math.min(px1, x1 + R + 1); y1 = Math.min(py1, y1 + R + 1);
+  if (!dabs.length || x1 <= x0 || y1 <= y0) return next;
+  const bw = x1 - x0, bh = y1 - y0;
+  const img = ctx.getImageData(x0, y0, bw, bh), px = img.data;
+  const weights = dabWeights(R), patch = new Uint8ClampedArray(n * n * 4);
+  for (const [sx, sy, dx, dy] of dabs) {
+    // the paint under the source first: source and destination overlap
+    for (let j = 0; j < n; j++) {
+      const yy = sy - R + j - y0;
+      for (let i = 0; i < n; i++) {
+        const xx = sx - R + i - x0, q = (j * n + i) * 4;
+        if (xx < 0 || yy < 0 || xx >= bw || yy >= bh) { patch[q + 3] = 0; continue; }
+        const o = (yy * bw + xx) * 4;
+        patch[q] = px[o]; patch[q + 1] = px[o + 1]; patch[q + 2] = px[o + 2]; patch[q + 3] = px[o + 3];
+      }
+    }
+    for (let j = 0; j < n; j++) {
+      const yy = dy - R + j - y0;
+      if (yy < 0 || yy >= bh) continue;
+      for (let i = 0; i < n; i++) {
+        const k = weights[j * n + i];
+        const xx = dx - R + i - x0;
+        if (!k || xx < 0 || xx >= bw) continue;
+        const q = (j * n + i) * 4, o = (yy * bw + xx) * 4;
+        const sa = patch[q + 3] / 255, da = px[o + 3] / 255;
+        const a = da * (1 - k) + sa * k;
+        if (a <= 0) { px[o + 3] = 0; continue; }
+        for (let c = 0; c < 3; c++) px[o + c] = (px[o + c] * da * (1 - k) + patch[q + c] * sa * k) / a;
+        px[o + 3] = a * 255;
+      }
+    }
+  }
+  ctx.putImageData(img, x0, y0);
+  return next;
 }
 
 // The finger's dabs from mark `from` on, on both layers (and their mirror images); the next mark.
 export function smudgeOp(fills, lines, op, from = 0) {
+  const ref = fills || lines, t = ref.getTransform();
+  const page = [Math.floor(t.e), Math.floor(t.f), Math.ceil(t.a * PAGE_W + t.e), Math.ceil(t.d * PAGE_H + t.f)];
   let next = from;
   mirrored(op, [fills, lines], () => {
-    for (const ctx of [fills, lines]) if (ctx) next = smudgeLayer(ctx, op, from);
+    for (const ctx of [fills, lines]) if (ctx) next = smudgeLayer(ctx, op, from, page);
   });
   return next;
 }
@@ -295,7 +343,7 @@ export function drawOp(fills, lines, op, solid = false) {
   } else if (op.t === 'bg') {
     // drawn on its own layer, see drawBackground
   } else if (op.t === 'smudge') {
-    // left out until the finger is fast enough on phones: drawing it froze the app (0.8.0)
+    if (!solid) smudgeOp(fills, lines, op);  // the paint bucket does not see it
   } else if (lines) {
     mirrored(op, [lines], () => {
       if (op.t === 'shape') drawShape(lines, op, pathOf(op));
