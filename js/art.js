@@ -295,7 +295,7 @@ export function drawOp(fills, lines, op, solid = false) {
   } else if (op.t === 'bg') {
     // drawn on its own layer, see drawBackground
   } else if (op.t === 'smudge') {
-    if (!solid) smudgeOp(fills, lines, op);  // the paint bucket does not see it
+    // left out until the finger is fast enough on phones: drawing it froze the app (0.8.0)
   } else if (lines) {
     mirrored(op, [lines], () => {
       if (op.t === 'shape') drawShape(lines, op, pathOf(op));
