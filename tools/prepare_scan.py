@@ -2,7 +2,7 @@
 
 The line scan becomes black lines on white, cropped to the drawing; the coloured scan is scaled and
 moved so that its black lines fall on those of the line scan (two prints are never framed alike).
-Needs Pillow and numpy.
+Needs Pillow, numpy and scipy.
 """
 import argparse
 import sys
@@ -10,62 +10,58 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from scipy import ndimage
 
 WORK_W = 500  # width at which the two scans are matched
+SHAPE_SHARE = 0.03  # a shape of ink lighter than this share of the heaviest is not part of the drawing
+FRAME_ZONE = 0.3  # share of the scan, from each edge, where a frame drawn round the picture is looked for
 
 
 def grey(path):
     return np.asarray(Image.open(path).convert("L"), dtype=np.float32)
 
 
-def inked_span(counts, share, gap):
-    """First and last index of the run holding the most ink, among indexes over `share` of ink, runs
-    split by blanks longer than `gap`: a dark scan edge or a stamp below the drawing is left out."""
-    idx = np.where(counts > share)[0]
-    runs, start = [], 0
-    for i in range(1, len(idx) + 1):
-        if i == len(idx) or idx[i] - idx[i - 1] > gap:
-            runs.append((idx[start], idx[i - 1]))
-            start = i
-    return max(runs, key=lambda r: counts[r[0]:r[1] + 1].sum())
-
-
-def drawing_box(mask, margin, inside_frame=False):
-    """Rows and columns holding a fair share of ink: stamps and specks along the edges drop out."""
+def drawing_box(mask, margin):
+    """Box around the shapes of ink that weigh at least SHAPE_SHARE of the heaviest one, leaving out
+    those that touch the edge of the scan (its dark border): stamps, specks and shelf marks drop out,
+    while every object of a page of separate objects stays in."""
     h, w = mask.shape
-    y0, y1 = inked_span(mask.sum(axis=1), w * 0.004, h * 0.03)
-    x0, x1 = inked_span(mask[y0:y1 + 1].sum(axis=0), h * 0.004, w * 0.03)
-    y0, y1 = inked_span(mask[:, x0:x1 + 1].sum(axis=1), w * 0.004, h * 0.03)
-    # thin ends (a tail, a whip) hold too little ink to count: the box grows while the next line has ink
-    cols = mask[y0:y1 + 1].sum(axis=0)
-    while x0 > 0 and cols[x0 - 1]:
-        x0 -= 1
-    while x1 < w - 1 and cols[x1 + 1]:
-        x1 += 1
-    rows = mask[:, x0:x1 + 1].sum(axis=1)
-    while y0 > 0 and rows[y0 - 1]:
-        y0 -= 1
-    while y1 < h - 1 and rows[y1 + 1]:
-        y1 += 1
-    if inside_frame:
-        return frame_inside(mask, x0, y0, x1, y1)
+    lab, n = ndimage.label(ndimage.binary_dilation(mask > 0, iterations=4))
+    weights = ndimage.sum(mask, lab, range(1, n + 1))
+    # each shape's box around its ink itself, so that thickening the lines to join them up does not
+    # make a shape near the edge of the scan touch it
+    boxes = ndimage.find_objects(np.where(mask > 0, lab, 0), max_label=n)
+    inner = [i for i, sl in enumerate(boxes) if sl and sl[0].start > 0 and sl[1].start > 0 and sl[0].stop < h and sl[1].stop < w]
+    if not inner:
+        inner = [i for i, sl in enumerate(boxes) if sl]
+    heaviest = max(weights[i] for i in inner)
+    keep = [i for i in inner if weights[i] >= SHAPE_SHARE * heaviest]
+    y0 = min(boxes[i][0].start for i in keep)
+    y1 = max(boxes[i][0].stop for i in keep) - 1
+    x0 = min(boxes[i][1].start for i in keep)
+    x1 = max(boxes[i][1].stop for i in keep) - 1
     return max(0, x0 - margin), max(0, y0 - margin), min(w, x1 + margin + 1), min(h, y1 + margin + 1)
 
 
-def frame_inside(mask, x0, y0, x1, y1):
-    """The box shrunk past the frame drawn around a picture, so the page edge becomes the frame and the
-    colours that overflow it in the coloured print are cut off with it."""
-    band_y, band_x = max(4, (y1 - y0) // 30), max(4, (x1 - x0) // 30)
-    def last_inked(lines, n):
-        hits = [i for i, v in enumerate(lines[:n]) if v > 0.3]
-        return hits[-1] + 3 if hits else 0
-    top = last_inked(mask[y0:y1 + 1, x0:x1 + 1].mean(axis=1), band_y)
-    bottom = last_inked(mask[y0:y1 + 1, x0:x1 + 1].mean(axis=1)[::-1], band_y)
-    left = last_inked(mask[y0:y1 + 1, x0:x1 + 1].mean(axis=0), band_x)
-    right = last_inked(mask[y0:y1 + 1, x0:x1 + 1].mean(axis=0)[::-1], band_x)
-    if not (top and bottom and left and right):
-        sys.exit("error: no frame found around the picture")
-    return x0 + left, y0 + top, x1 - right + 1, y1 - bottom + 1
+def frame_inside(mask):
+    """The box just inside the frame drawn around a picture: from each edge of the scan, past the first
+    band of lines with a fair share of ink, after a dark border along the edge of the scan if there is
+    one. The page edge becomes the frame, and the colours that overflow it in the coloured print go."""
+    h, w = mask.shape
+    def past_frame(cover):
+        inked = cover[:int(len(cover) * FRAME_ZONE)] > 0.2
+        i = 0
+        while i < len(inked) and inked[i]:
+            i += 1
+        while i < len(inked) and not inked[i]:
+            i += 1
+        if i == len(inked):
+            sys.exit("error: no frame found around the picture")
+        while i < len(inked) and inked[i]:
+            i += 1
+        return i + 4
+    rows, cols = mask.mean(axis=1), mask.mean(axis=0)
+    return past_frame(cols), past_frame(rows), w - past_frame(cols[::-1]), h - past_frame(rows[::-1])
 
 
 def shift_score(a, b):
@@ -112,7 +108,7 @@ def main():
     for x0, y0, x1, y1 in args.blank:
         g[y0:y1, x0:x1] = 255
     ink = (g < args.ink).astype(np.float32)
-    x0, y0, x1, y1 = drawing_box(ink, margin=12, inside_frame=args.inside_frame)
+    x0, y0, x1, y1 = frame_inside(ink) if args.inside_frame else drawing_box(ink, margin=12)
     cg = grey(args.colours)
     score, s, dx, dy = register(ink, (cg < args.ink).astype(np.float32))
     print(f"coloured scan: scale {s:.4f}, offset {dx:.1f}, {dy:.1f}, match {score:.3f}")
