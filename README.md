@@ -11,9 +11,10 @@ Use it at https://a220n1.github.io/giuno-colors/ and add it to the home screen f
 - 25 drawings in seven categories, from 12 zones for a young child to about 500 in the big coloring pages, whose details only show once zoomed in.
 - Pick a color, then tap the zones that carry its number; they show a checkerboard until they are filled. Holding a zone picks its color.
 - Pinch to zoom and drag to move. Numbers too small to read appear as you zoom in, and the magnifier jumps to a zone that is left.
-- A blank page for free drawing, with a brush, a paint bucket for closed areas, an eraser, five shapes, four line sizes, 16 colors and a pastel rainbow. A rainbow stroke changes hue along its length and leaves a trail of twinkling stars while it is drawn; the paint bucket and the shapes fill or outline in a rainbow gradient. A mirror repeats every stroke, shape, eraser stroke and fill on the other side of the page, in its four quarters, or six times round the middle like a kaleidoscope, with its axes shown as dashed lines. Undo and redo reach back to the first stroke, even after the drawing was closed. Each child's drawings come first in the gallery.
+- A blank page for free drawing, with eight kinds of brush (felt pen, pen, pencil, pastel, paintbrush, glitter, neon and a trail of hearts), a paint bucket for closed areas, an eraser, five shapes, 42 stickers (OpenMoji emojis and the profile animals), four line sizes, 16 colors and a pastel rainbow. A rainbow stroke changes hue along its length and leaves a trail of twinkling stars while it is drawn; the paint bucket and the shapes fill or outline in a rainbow gradient. A mirror repeats every stroke, shape, eraser stroke and fill on the other side of the page, in its four quarters, or six times round the middle like a kaleidoscope, with its axes shown as dashed lines. The page can be white or colored paper, a starry night sky, squared or dotted paper. Two fingers zoom in on the page. A replay button draws the picture again, stroke by stroke, in a few seconds. Undo and redo reach back to the first stroke, even after the drawing was closed. Each child's drawings come first in the gallery.
+- Any coloring page can also be painted freely with these tools: its outlines stay on top of the paint and hold the paint bucket.
 - A padlock on the coloring and drawing screens hides the buttons that leave the drawing and stops the phone's Back gesture from leaving it. Holding the padlock for a little over a second unlocks it. The app cannot block the home button: Android's app pinning does that.
-- Each child gets a profile with its own animal, progress and drawings. There are 15 animals to pick from. Progress, profiles and the language are kept in the browser's localStorage, drawings in its IndexedDB.
+- Each child gets a profile with its own animal, progress and drawings. There are 15 animals to pick from. Progress, profiles and the language are kept in the browser's localStorage, drawings in its IndexedDB. The grown-ups' corner at the bottom of the gallery saves all of it in a JSON file and puts it back from such a file, for instance on a new phone.
 - A drawing can be shared or saved as a PNG image.
 
 ## Build
@@ -55,7 +56,7 @@ Both scripts write the same files on every run, so regenerating a drawing does n
 
 ## Tests
 
-`tools/test/run.py` builds the site, serves it on a local port and opens it in headless Firefox once per test case. The colouring cases fill every drawing with simulated taps, and the drawing cases use every tool, the rainbow and the padlock, save, reopen and delete a drawing, each at three window sizes. The gallery case starts with two profiles, saved progress and saved drawings, switches the language and creates a profile with an animal. Each case writes a screenshot and a log. The tests need Python 3 and Firefox.
+`tools/test/run.py` builds the site, serves it on a local port and opens it in headless Firefox once per test case. The colouring cases fill every drawing with simulated taps, and the drawing cases use every tool and kind of brush, the rainbow, the mirror, stickers, backgrounds, the replay, zooming, a coloring page painted freely and the padlock, save, reopen and delete a drawing, each at three window sizes. The gallery case starts with two profiles, saved progress and saved drawings, switches the language, creates a profile with an animal, and saves and restores a backup. Each case writes a screenshot and a log. The tests need Python 3 and Firefox.
 
 ```sh
 python3 tools/test/run.py --firefox <firefox executable> --profile <folder> --out <empty folder>
@@ -67,7 +68,7 @@ The profile folder holds a Firefox profile that only the tests use. Under WSL, r
 
 | Path | Content |
 |---|---|
-| `src/` | app source: page, styles, modules, manifest, service worker, animal avatars in `src/avatars/` |
+| `src/` | app source: page, styles, modules, manifest, service worker, animal avatars in `src/avatars/`, emoji stickers in `src/stamps/` |
 | `drawings/` | the drawings |
 | `icons/` | logo and app icons; the PNG icons are exports of `icon.svg` and `icon-maskable.svg` |
 | `build.py` | builds the site |
@@ -76,4 +77,4 @@ The profile folder holds a Firefox profile that only the tests use. Under WSL, r
 
 ## License
 
-The code is under the GNU General Public License, version 3 or later (see `LICENSE`). The drawings in `drawings/`, the animal avatars in `src/avatars/` and the logo and icons in `icons/` are under CC BY-SA 4.0 (see `LICENSE-ART.md`).
+The code is under the GNU General Public License, version 3 or later (see `LICENSE`). The drawings in `drawings/`, the animal avatars in `src/avatars/` and the logo and icons in `icons/` are under CC BY-SA 4.0, and the stickers in `src/stamps/` are OpenMoji emojis under CC BY-SA 4.0 (see `LICENSE-ART.md`).

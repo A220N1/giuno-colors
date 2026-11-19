@@ -63,6 +63,16 @@ export async function deleteArt(id) {
   await request('readwrite', (s) => s.delete(id));
 }
 
+export async function allArt() {
+  if (!(await open())) return [...mem.values()];
+  return request('readonly', (s) => s.getAll());
+}
+
+export async function clearArt() {
+  if (!(await open())) { mem.clear(); return; }
+  await request('readwrite', (s) => s.clear());
+}
+
 export async function deleteArtOf(profile) {
   for (const r of await listArt(profile)) await deleteArt(r.id);
 }

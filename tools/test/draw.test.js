@@ -34,7 +34,7 @@ run(async () => {
   // an empty page left at once is not kept
   $('#cards .art-new').click();
   await waitFor(opened, 'drawing screen');
-  const sr = stage.getBoundingClientRect(), pr = $('.sheet').getBoundingClientRect();
+  const sr = stage.getBoundingClientRect(), pr = $('.sheet .paper').getBoundingClientRect();
   check(pr.left >= sr.left - 0.5 && pr.right <= sr.right + 0.5 && pr.top >= sr.top - 0.5 && pr.bottom <= sr.bottom + 0.5 && pr.width > 100,
     `page fits on screen (${Math.round(pr.width)} x ${Math.round(pr.height)})`);
   check(Math.abs(pr.width / pr.height - art.PAGE_W / art.PAGE_H) < 0.01, 'page keeps its proportions');
@@ -223,6 +223,115 @@ run(async () => {
   check(draw.debug.tool.mirror === 1 && !$('.sheet .guides').children.length, 'mirror off');
   $('#draw-back').click();
   await waitFor(inGallery, 'gallery after the mirror');
+
+  // kinds of brush: each one draws and is recorded; a closed pencil line still holds the paint bucket
+  $('#cards .art-new').click();
+  await waitFor(opened, 'drawing screen');
+  const K = draw.debug.state();
+  const pickBrush = (k) => {
+    if (draw.debug.tool.kind !== 'brush') pickTool('brush');
+    pickTool('brush');  // a second tap opens the menu
+    $(`#draw-pop [data-brush="${k}"]`).click();
+  };
+  pickColor(BLACK);
+  art.BRUSHES.forEach((k, i) => {
+    pickBrush(k);
+    drag(stage, segment(100, 60 + 50 * i, 300, 60 + 50 * i, 30));
+    const op = K.ops[K.ops.length - 1];
+    const im = flat();
+    let inked = 0;
+    for (let x = 100; x <= 300; x++) for (let dy = -8; dy <= 8; dy += 4) if (pixel(im, x, 60 + 50 * i + dy) !== WHITE) inked++;
+    check(op.t === 'line' && (op.k || 'marker') === k && inked > 40, `${k} draws (${inked} inked pixels)`);
+  });
+  pickBrush('pencil');
+  drag(stage, ring(600, 600, 120));
+  bucket(RED, 600, 600);
+  img = flat();
+  check(pixel(img, 600, 600) === RED && pixel(img, 600, 780) !== RED && pixel(img, 420, 600) !== RED, 'a closed pencil line holds the bucket');
+
+  // stickers: a tap drops one of the chosen size, a drag sizes it
+  pickTool('stamp');
+  check($('#draw-pop').querySelectorAll('[data-stamp]').length === 42, 'sticker menu: 27 emojis and 15 animals');
+  $('#draw-pop [data-stamp="e2764"]').click();
+  tap(stage, ...at(400, 860));
+  const st = K.ops[K.ops.length - 1];
+  check(st.t === 'stamp' && st.k === 'e2764' && st.b[2] === 130, 'a tap drops a heart sticker');
+  await waitFor(() => pixel(flat(), 400, 860) !== WHITE, 'heart sticker drawn');
+  pickTool('stamp');
+  $('#draw-pop [data-stamp="fox"]').click();
+  drag(stage, segment(80, 720, 230, 840, 10));
+  check(K.ops[K.ops.length - 1].b[2] === 150, 'a drag sizes the sticker');
+
+  // background: the night sky, undone
+  $('#draw-bg').click();
+  check($('#draw-pop').querySelectorAll('[data-bg]').length === 9, 'nine backgrounds');
+  $('#draw-pop [data-bg="night"]').click();
+  const dark = (c) => parseInt(c.slice(1, 3), 16) < 90 && parseInt(c.slice(5, 7), 16) < 140;
+  check(K.ops[K.ops.length - 1].t === 'bg' && dark(pixel(flat(), 795, 995)), 'night background');
+  $('#undo').click();
+  check(pixel(flat(), 795, 995) === WHITE, 'background undone');
+  $('#redo').click();
+
+  // replay: the drawing draws itself again and ends as it was; a tap stops it
+  const before = [[200, 60], [600, 600], [400, 860], [795, 995]].map(([x, y]) => pixel(flat(), x, y));
+  draw.debug.replay();
+  check(K.replay && stage.classList.contains('replaying'), 'replay running');
+  await waitFor(() => !K.replay, 'replay to end', 15000);
+  check([[200, 60], [600, 600], [400, 860], [795, 995]].every(([x, y], i) => pixel(flat(), x, y) === before[i]) && !stage.classList.contains('replaying'),
+    'replay ends on the same drawing');
+  draw.debug.replay();
+  tap(stage, ...at(400, 500));
+  check(!K.replay && K.ops.length === draw.debug.state().ops.length, 'a tap stops the replay without drawing');
+  $('#draw-back').click();
+  await waitFor(inGallery, 'gallery after the brushes');
+
+  // a colouring page painted freely: its outlines stay on top and hold the bucket
+  $('#cards .cards .card').click();
+  await waitFor(() => !$('#play').hidden, 'colouring screen');
+  $('#paint-free').click();
+  await waitFor(opened, 'free painting screen');
+  const F = draw.debug.state();
+  check(F.baseId && F.base && F.base.canvas.width > 100, `outlines of ${F.baseId} loaded`);
+  pickTool('bucket');
+  pickColor(GREEN);
+  tap(stage, ...at(400, 500));
+  const fimg = art.renderFlat(F.ops, art.PAGE_W, F.base);
+  let green = 0, dk = 0;
+  for (let y = 0; y < art.PAGE_H; y += 5) for (let x = 0; x < art.PAGE_W; x += 5) {
+    const c = pixel(fimg, x, y);
+    if (c === GREEN) green++;
+    else if (parseInt(c.slice(1, 3), 16) < 110) dk++;
+  }
+  check(F.ops.length === 1 && green > 50 && green < 0.6 * 160 * 200 && dk > 200, `bucket stays inside the outlines (${green} green, ${dk} dark samples)`);
+  $('#draw-back').click();
+  await waitFor(() => !$('#play').hidden, 'back to the colouring screen');
+  $('#back').click();
+  await waitFor(inGallery, 'gallery');
+  await sleep(200);
+  const recs = await store.listArt('p1');
+  check(recs.some((r) => r.base === F.baseId && r.ops.length === 1), 'painted page saved with its colouring page');
+
+  // two fingers zoom on the page; drawing then lands where the finger is; the button shows the whole page
+  $('#cards .art-new').click();
+  await waitFor(opened, 'drawing screen');
+  const Z = draw.debug.state();
+  const finger = (type, id, [x, y]) => stage.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch',
+    isPrimary: id === 1, clientX: x, clientY: y, bubbles: true, cancelable: true, buttons: type === 'pointerup' ? 0 : 1 }));
+  finger('pointerdown', 1, at(380, 500));
+  finger('pointerdown', 2, at(420, 500));
+  for (let i = 1; i <= 10; i++) { finger('pointermove', 1, at(380 - 12 * i, 500)); finger('pointermove', 2, at(420 + 12 * i, 500)); }
+  finger('pointerup', 2, at(540, 500));
+  finger('pointerup', 1, at(260, 500));
+  check(Z.view.z > 2.5 && !$('#zoom-fit').hidden && Z.ops.length === 0, `pinch zooms in (x${Z.view.z.toFixed(1)}), nothing drawn`);
+  pickBrush('marker');
+  pickColor(BLUE);
+  drag(stage, segment(390, 480, 410, 520, 10));
+  const zl = Z.ops[0];
+  check(zl && Math.abs(zl.p[0] - 390) <= 1 && Math.abs(zl.p[1] - 480) <= 1 && pixel(flat(), 400, 500) === BLUE, 'drawing while zoomed lands under the finger');
+  $('#zoom-fit').click();
+  check(Z.view.z === 1 && $('#zoom-fit').hidden, 'the whole page again');
+  $('#draw-back').click();
+  await waitFor(inGallery, 'gallery after zooming');
 
   // a small house for the screenshot
   $('#cards .art-new').click();

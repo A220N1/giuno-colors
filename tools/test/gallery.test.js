@@ -99,4 +99,18 @@ run(async () => {
   check(loaded, 'avatar image loads');
   const saved = JSON.parse(localStorage.getItem('giuno.profiles')).find((p) => p.name === 'Lou');
   check(saved && saved.animal === 'owl' && !('color' in saved), 'profile saved with its animal');
+
+  // grown-ups' corner: a backup holds profiles, progress and drawings, and puts them back as they were
+  check(document.querySelector('#backup-save') && document.querySelector('#backup-load'), "grown-ups' corner buttons");
+  const backup = await import('../js/backup.js');
+  const { allArt } = await import('../js/artstore.js');
+  const data = JSON.parse(JSON.stringify(await backup.makeBackup()));
+  check(data.app === 'giuno-colors' && JSON.parse(data.storage.profiles).length === 3 && data.art.length === 3
+    && data.storage[`progress.p1.${first.key}`], `backup: 3 profiles, progress, ${data.art.length} drawings`);
+  await putArt({ id: 'extra', profile: 'p1', created: 5, updated: 50, ops: [line('#1f1f1f', 100)] });
+  localStorage.setItem('giuno.profiles', '[]');
+  check(await backup.restoreBackup(data), 'backup restored');
+  check(JSON.parse(localStorage.getItem('giuno.profiles')).length === 3 && (await allArt()).length === 3
+    && localStorage.getItem(`giuno.progress.p1.${first.key}`) === '[0,1,2]', 'restored as saved, nothing more');
+  check(!(await backup.restoreBackup({ app: 'something else', storage: {}, art: [] })), 'a foreign file is refused');
 });

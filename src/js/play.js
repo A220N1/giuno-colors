@@ -20,9 +20,12 @@ export const testing = { instant: false };  // tests skip the zoom animation
 const stage = $('#stage');
 let P = null;           // the drawing being coloured
 let onBack = () => {};
+let onFree = () => {};
 
-export function openPlay(d, profileId, back) {
+// `free`: opens the drawing as a page to paint freely.
+export function openPlay(d, profileId, back, free = () => {}) {
   onBack = back;
+  onFree = free;
   stopConfetti();
   showScreen('play');
   $('#bravo').hidden = true;
@@ -468,6 +471,7 @@ async function share() {
 $('#back').addEventListener('click', () => onBack());
 $('#bravo-back').addEventListener('click', () => onBack());
 $('#find').addEventListener('click', findZone);
+$('#paint-free').addEventListener('click', () => { if (P) onFree(P.d); });
 $('#share').addEventListener('click', share);
 $('#bravo-share').addEventListener('click', share);
 $('#reset').addEventListener('click', async () => {
@@ -476,7 +480,7 @@ $('#reset').addEventListener('click', async () => {
   if (!(await confirmDialog(t('Tout effacer et recommencer ce dessin ?'), t('Effacer')))) return;
   if (!P || P.d !== d) return;
   setProgress(profileId, d.key, []);
-  openPlay(d, profileId, onBack);
+  openPlay(d, profileId, onBack, onFree);
 });
 
 // Hooks for the automated tests.

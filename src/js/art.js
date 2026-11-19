@@ -7,9 +7,15 @@
 //   { t: 'erase', w, p: [...] }                     eraser stroke, clears both layers
 //   { t: 'shape', k, c, w, b: [x, y, width, height] }
 //   { t: 'fill', c, r: [[x0, y0, x1, y1, ...], ...] } closed loops, even-odd rule
+//   { t: 'stamp', k, b: [x, y, width, height] }      sticker: 'e' + OpenMoji code, or a profile animal
+//   { t: 'bg', k: 'paper' | 'night' | 'grid' | 'dots', c }  page background, the last one counts
+// A line may carry k, its kind of brush (see brushes.js); without it, the felt pen.
 // The colour c is '#rrggbb' or 'rainbow': pastel hues turning along a stroke, or across a fill or shape.
 // Lines, eraser strokes and shapes may carry m (2, 4 or 6): drawn again as their mirror images around
 // the middle of the page. A fill with z uses the nonzero rule: its loops may come from several taps.
+
+import { RAINBOW, rainbowAt, HEART, linePath, drawStroke, wallWidth } from './brushes.js';
+import { stampImage, isAnimal } from './images.js';
 
 export const PAGE_W = 800, PAGE_H = 1000;
 export const SIZES = [6, 14, 28, 52];
@@ -17,9 +23,7 @@ export const COLORS = [
   '#1f1f1f', '#9e9e9e', '#8d5a3b', '#e53935', '#fb8c00', '#fdd835', '#9ccc65', '#2e9d4a',
   '#ffffff', '#f5c9a0', '#f06292', '#c39bd3', '#8e44ad', '#1e63c9', '#64b5f6', '#26c6da',
 ];
-export const RAINBOW = 'rainbow';
-export const RAINBOW_LEN = 600;  // page units of stroke for one full turn of the rainbow
-export const rainbowAt = (turn) => `hsl(${Math.round((((turn % 1) + 1) % 1) * 360)}, 88%, 76%)`;
+export { RAINBOW, RAINBOW_LEN, rainbowAt, BRUSHES, BRUSH_NAMES, PIECEWISE } from './brushes.js';
 
 // Mirror modes: 1 none, 2 left and right, 4 the four quarters, 6 a kaleidoscope of three turns.
 export const MIRRORS = [1, 2, 4, 6];
@@ -82,23 +86,10 @@ export const SHAPES = {
   square: 'M0 0H1V1H0Z',
   triangle: 'M.5 0L1 1H0Z',
   star: starPath(),
-  heart: 'M.5 .24C.42 .06 .27 0 .18 0 .07 0 0 .1 0 .26 0 .52 .26 .74 .5 1 .74 .74 1 .52 1 .26 1 .1 .93 0 .82 0 .73 0 .58 .06 .5 .24Z',
+  heart: HEART,
 };
 
 const cache = new WeakMap();  // op -> Path2D
-
-function linePath(p) {
-  const path = new Path2D();
-  const n = p.length / 2;
-  path.moveTo(p[0], p[1]);
-  if (n === 1) { path.lineTo(p[0] + 0.01, p[1]); return path; }  // a dot
-  // through the midpoints, with the recorded points as control points: smooth and drawable as it comes
-  for (let i = 1; i < n - 1; i++) {
-    path.quadraticCurveTo(p[2 * i], p[2 * i + 1], (p[2 * i] + p[2 * i + 2]) / 2, (p[2 * i + 1] + p[2 * i + 3]) / 2);
-  }
-  path.lineTo(p[2 * n - 2], p[2 * n - 1]);
-  return path;
-}
 
 function shapePath(k, [x, y, w, h]) {
   const path = new Path2D();
@@ -151,57 +142,94 @@ function loopsBox(loops) {
   return [x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)];
 }
 
-// The same curve as linePath, piece by piece, each piece in the hue reached at that length.
-function rainbowLine(ctx, p, width) {
-  ctx.lineWidth = width;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  const n = p.length / 2;
-  let x = p[0], y = p[1], len = 0;
-  if (n === 1) {
-    ctx.strokeStyle = rainbowAt(0);
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 0.01, y); ctx.stroke();
+// A line in its brush kind; for the paint bucket, only the whole line matters.
+function drawLine(ctx, op, solid) {
+  if (solid) stroke(ctx, linePath(op.p), '#000', wallWidth(op));
+  else drawStroke(ctx, op);
+}
+
+function drawStamp(ctx, op) {
+  const img = stampImage(op.k);
+  if (!img) return;
+  const [x, y, w, h] = op.b;
+  if (!isAnimal(op.k)) { ctx.drawImage(img, x, y, w, h); return; }
+  ctx.save();  // the animals are round stickers
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.drawImage(img, x, y, w, h);
+  ctx.restore();
+}
+
+// Page backgrounds: plain papers, a night sky, squared and dotted paper.
+export const BACKGROUNDS = [
+  { k: 'paper', c: '#ffffff' }, { k: 'paper', c: '#fdf1d8' }, { k: 'paper', c: '#fde2ea' }, { k: 'paper', c: '#e0effc' },
+  { k: 'paper', c: '#dff4e7' }, { k: 'paper', c: '#fff5bf' }, { k: 'night' }, { k: 'grid' }, { k: 'dots' },
+];
+const hashRand = (i, j) => { const v = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return v - Math.floor(v); };
+
+export function backgroundOf(ops) {
+  for (let i = ops.length - 1; i >= 0; i--) if (ops[i].t === 'bg') return ops[i];
+  return null;
+}
+
+export const sameBackground = (a, b) => (a ? a.k : 'paper') === (b ? b.k : 'paper') && (a && a.c || '#ffffff') === (b && b.c || '#ffffff');
+
+// The colour the eraser shows while erasing: roughly the background.
+export function paperColor(bg) {
+  if (!bg || bg.k === 'paper') return bg ? bg.c : '#ffffff';
+  return bg.k === 'night' ? '#1d2552' : '#ffffff';
+}
+
+export function drawBackground(ctx, bg, k) {
+  clearCanvas(ctx, k);
+  const kind = bg ? bg.k : 'paper';
+  if (kind === 'night') {
+    const g = ctx.createLinearGradient(0, 0, 0, PAGE_H);
+    g.addColorStop(0, '#0d1636');
+    g.addColorStop(1, '#2d3166');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, PAGE_W, PAGE_H);
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < 150; i++) {
+      ctx.globalAlpha = 0.35 + 0.65 * hashRand(i, 3);
+      ctx.beginPath();
+      ctx.arc(hashRand(i, 0) * PAGE_W, hashRand(i, 1) * PAGE_H, 0.8 + 2 * hashRand(i, 2) ** 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
     return;
   }
-  for (let i = 1; i < n; i++) {
-    const last = i === n - 1;
-    const qx = p[2 * i], qy = p[2 * i + 1];
-    const ex = last ? qx : (qx + p[2 * i + 2]) / 2, ey = last ? qy : (qy + p[2 * i + 3]) / 2;
-    const d = last ? Math.hypot(qx - x, qy - y) : Math.hypot(qx - x, qy - y) + Math.hypot(ex - qx, ey - qy);
-    ctx.strokeStyle = rainbowAt((len + d / 2) / RAINBOW_LEN);
+  ctx.fillStyle = kind === 'paper' && bg ? bg.c : '#ffffff';
+  ctx.fillRect(0, 0, PAGE_W, PAGE_H);
+  if (kind === 'grid') {
+    ctx.strokeStyle = '#c9dcf3';
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(x, y);
-    if (last) ctx.lineTo(ex, ey); else ctx.quadraticCurveTo(qx, qy, ex, ey);
+    for (let x = 40; x < PAGE_W; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, PAGE_H); }
+    for (let y = 40; y < PAGE_H; y += 40) { ctx.moveTo(0, y); ctx.lineTo(PAGE_W, y); }
     ctx.stroke();
-    len += d; x = ex; y = ey;
+  } else if (kind === 'dots') {
+    ctx.fillStyle = '#bfc4d6';
+    ctx.beginPath();
+    for (let x = 40; x < PAGE_W; x += 40) for (let y = 40; y < PAGE_H; y += 40) { ctx.moveTo(x + 2.6, y); ctx.arc(x, y, 2.6, 0, Math.PI * 2); }
+    ctx.fill();
   }
 }
 
-// Length of a stroke so far, as rainbowLine measures it.
-export function lineLength(p) {
-  const n = p.length / 2;
-  let x = p[0], y = p[1], len = 0;
-  for (let i = 1; i < n; i++) {
-    const last = i === n - 1;
-    const qx = p[2 * i], qy = p[2 * i + 1];
-    const ex = last ? qx : (qx + p[2 * i + 2]) / 2, ey = last ? qy : (qy + p[2 * i + 3]) / 2;
-    len += last ? Math.hypot(qx - x, qy - y) : Math.hypot(qx - x, qy - y) + Math.hypot(ex - qx, ey - qy);
-    x = ex; y = ey;
-  }
-  return len;
-}
-
-function drawLine(ctx, op) {
-  if (op.c === RAINBOW) rainbowLine(ctx, op.p, op.w);
-  else stroke(ctx, linePath(op.p), op.c, op.w);
+// The outlines of a colouring page painted freely, above everything else.
+export function drawBase(ctx, base, k) {
+  clearCanvas(ctx, k);
+  if (base) ctx.drawImage(base.canvas, ...base.box);
 }
 
 function drawShape(ctx, op, path) {
   stroke(ctx, path, op.c === RAINBOW ? rainbowGradient(ctx, op.b) : op.c, op.w);
 }
 
-// Draw one operation on the fill and line layers (either may be null).
-export function drawOp(fills, lines, op) {
+// Draw one operation on the fill and line layers (either may be null). `solid` draws lines plain and
+// whole, as the paint bucket sees them.
+export function drawOp(fills, lines, op, solid = false) {
   if (op.t === 'fill') {
     if (!fills) return;
     fills.fillStyle = op.c === RAINBOW ? rainbowGradient(fills, loopsBox(op.r)) : op.c;
@@ -216,27 +244,42 @@ export function drawOp(fills, lines, op) {
         ctx.restore();
       }
     });
+  } else if (op.t === 'bg') {
+    // drawn on its own layer, see drawBackground
   } else if (lines) {
     mirrored(op, [lines], () => {
       if (op.t === 'shape') drawShape(lines, op, pathOf(op));
-      else drawLine(lines, op);
+      else if (op.t === 'stamp') drawStamp(lines, op);
+      else drawLine(lines, op, solid);
     });
   }
 }
 
 // An operation still being drawn, on the layer above both: the eraser shows as white paper.
-export function drawPreview(ctx, op) {
+// A line of a piecewise kind draws its marks from `from` on; the next mark is returned.
+export function drawPreview(ctx, op, from = 0) {
+  let next = 0;
   mirrored(op, [ctx], () => {
-    if (op.t === 'erase') stroke(ctx, linePath(op.p), '#fff', op.w);
+    if (op.t === 'erase') stroke(ctx, linePath(op.p), op.paper || '#fff', op.w);
     else if (op.t === 'shape') drawShape(ctx, op, shapePath(op.k, op.b));
-    else drawLine(ctx, op);
+    else if (op.t === 'stamp') { ctx.save(); ctx.globalAlpha = 0.85; drawStamp(ctx, op); ctx.restore(); }
+    else next = drawStroke(ctx, op, from);
   });
+  return next;
 }
 
+// Clear a layer and set it to draw in page units: `k` is a scale, or [scale, x, y] for a page moved
+// and zoomed on a layer the size of the screen. Nothing is drawn outside the page.
 export function clearCanvas(ctx, k) {
+  const [s, tx, ty] = Array.isArray(k) ? k : [k, 0, 0];
+  ctx.restore();  // the clip of the previous clear; nothing happens the first time
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  ctx.setTransform(k, 0, 0, k, 0, 0);
+  ctx.save();
+  ctx.setTransform(s, 0, 0, s, tx, ty);
+  ctx.beginPath();
+  ctx.rect(0, 0, PAGE_W, PAGE_H);
+  ctx.clip();
 }
 
 export function renderLayers(fills, lines, ops, k) {
@@ -251,27 +294,30 @@ function makeCanvas(w, h) {
   return c;
 }
 
-// The drawing flattened on white paper, `width` pixels wide.
-export function renderFlat(ops, width) {
+// The drawing flattened on its background, `width` pixels wide, with its colouring page if any.
+export function renderFlat(ops, width, base = null) {
   const k = width / PAGE_W, height = Math.round(PAGE_H * k);
-  const f = makeCanvas(width, height), l = makeCanvas(width, height), out = makeCanvas(width, height);
+  const b = makeCanvas(width, height), f = makeCanvas(width, height), l = makeCanvas(width, height), out = makeCanvas(width, height);
+  drawBackground(b.getContext('2d'), backgroundOf(ops), k);
   renderLayers(f.getContext('2d'), l.getContext('2d'), ops, k);
   const ctx = out.getContext('2d');
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, width, height);
-  ctx.drawImage(f, 0, 0);
-  ctx.drawImage(l, 0, 0);
+  for (const c of [b, f, l]) ctx.drawImage(c, 0, 0);
+  if (base) {
+    ctx.setTransform(k, 0, 0, k, 0, 0);
+    ctx.drawImage(base.canvas, ...base.box);
+  }
   return out;
 }
 
 // Paint bucket: the part of the page reached from (x, y) without crossing a line, as closed loops
 // around its pixels (one pixel per page unit). Null when the tap is on a thick line or off the page.
-export function fillRegion(ops, x, y) {
+export function fillRegion(ops, x, y, base = null) {
   const W = PAGE_W, H = PAGE_H;
   x = Math.floor(x); y = Math.floor(y);
   if (x < 0 || y < 0 || x >= W || y >= H) return null;
   const ctx = makeCanvas(W, H).getContext('2d', { willReadFrequently: true });
-  for (const op of ops) if (op.t !== 'fill') drawOp(null, ctx, op);
+  for (const op of ops) if (op.t !== 'fill') drawOp(null, ctx, op, true);
+  if (base) ctx.drawImage(base.canvas, ...base.box);
   const px = ctx.getImageData(0, 0, W, H).data;
   const open = new Uint8Array(W * H);
   for (let p = 0; p < open.length; p++) open[p] = px[4 * p + 3] < WALL_ALPHA ? 1 : 0;

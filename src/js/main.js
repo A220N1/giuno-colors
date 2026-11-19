@@ -7,6 +7,8 @@ import { showProfiles } from './profiles.js';
 import { openPlay, leavePlay } from './play.js';
 import { openDraw, leaveDraw } from './draw.js';
 import { resetLock } from './lock.js';
+import './backup.js';
+import { newArtId } from './artstore.js';
 import { lang, setLanguage, translatePage } from './i18n.js';
 
 // Screens map to the address: '' gallery, '#profils' profile choice, '#<drawing id>' colouring,
@@ -22,8 +24,12 @@ export function route() {
   const profile = currentProfile();
   if (!profile || startupPick || hash === 'profils') return showProfiles(pickProfile);
   const d = drawings.find((x) => x.id === hash);
-  if (d) return openPlay(d, profile.id, goBack);
-  if (hash.startsWith('libre/') && hash.length > 6) return openDraw(hash.slice(6), profile.id, goBack);
+  if (d) return openPlay(d, profile.id, goBack, (page) => push(`libre/${newArtId()}@${encodeURIComponent(page.id)}`));
+  // '#libre/<id>', or '#libre/<id>@<colouring page>' for a page painted freely
+  if (hash.startsWith('libre/') && hash.length > 6) {
+    const [id, baseId = ''] = hash.slice(6).split('@');
+    return openDraw(id, profile.id, goBack, baseId);
+  }
   showGallery(profile, openDrawing, openProfiles, openArt);
 }
 
