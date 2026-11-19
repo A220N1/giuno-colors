@@ -56,6 +56,12 @@ const EN = {
   'Étoile': 'Star',
   'Cœur': 'Heart',
   'Mon dessin': 'My drawing',
+  'Miroir': 'Mirror',
+  'Miroir : {name}': 'Mirror: {name}',
+  'Sans miroir': 'No mirror',
+  'Miroir gauche-droite': 'Left and right mirror',
+  'Miroir en quatre': 'Four-way mirror',
+  'Kaléidoscope': 'Kaleidoscope',
 
   // lock
   "Verrouiller l'écran": 'Lock the screen',

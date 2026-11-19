@@ -1,6 +1,6 @@
 // The free drawing screen: a blank page with brush, paint bucket, eraser, shapes, undo and redo.
 import { $, el, showScreen, vibrate, inkFor, confirmDialog } from './util.js';
-import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, drawOp, drawPreview, renderLayers, renderFlat, clearCanvas, fillRegion } from './art.js';
+import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, MIRRORS, mirrorPoints, drawOp, drawPreview, renderLayers, renderFlat, clearCanvas, fillRegion } from './art.js';
 import { getArt, putArt, deleteArt } from './artstore.js';
 import { sharePng, canvasPng } from './share.js';
 import { sparkler } from './sparkles.js';
@@ -13,6 +13,7 @@ const SHAPE_TAP_SIZE = 180; // a tap with the shape tool drops a shape this big
 const SAVE_DELAY_MS = 400;
 const SHAPE_NAMES = { circle: 'Rond', square: 'Carré', triangle: 'Triangle', star: 'Étoile', heart: 'Cœur' };
 const SPARKLE_EVERY_PX = 9;  // finger travel between two stars of a rainbow stroke
+const MIRROR_NAMES = { 1: 'Sans miroir', 2: 'Miroir gauche-droite', 4: 'Miroir en quatre', 6: 'Kaléidoscope' };
 const DOT_PX = [6, 11, 18, 28];  // the sizes as shown on their buttons
 
 const stage = $('#draw-stage');
@@ -23,7 +24,7 @@ const lines = lineCanvas.getContext('2d');
 const live = liveCanvas.getContext('2d');
 const pop = $('#draw-pop');
 const sparkles = sparkler($('#sparkles'));
-const tool = { kind: 'brush', color: COLORS[0], size: 1, shape: 'circle' };  // kept from one drawing to the next
+const tool = { kind: 'brush', color: COLORS[0], size: 1, shape: 'circle', mirror: 1 };  // kept from one drawing to the next
 let A = null;  // the drawing on screen
 let pen = null;
 let onBack = () => {};
@@ -157,13 +158,23 @@ function addPoint(x, y) {
 
 const isRainbow = (op) => op && op.c === RAINBOW;
 
-// Stars around a point of the page, in the hue the rainbow has there.
+// A new operation takes the mirror mode in use.
+function mirrorable(op) {
+  if (tool.mirror > 1) op.m = tool.mirror;
+  return op;
+}
+
+const copiesOf = (x, y) => (tool.mirror > 1 ? mirrorPoints(tool.mirror, x, y) : [[x, y]]);
+
+// Stars around a point of the page and its mirror images, in the hue the rainbow has there.
 function sparkleAt(x, y, turn, n = 1, spread = 0) {
   const r = stage.getBoundingClientRect(), sr = sheet.getBoundingClientRect();
-  const cx = sr.left - r.left + x * A.s, cy = sr.top - r.top + y * A.s;
   const reach = spread || SIZES[tool.size] * A.s / 2 + 6;
-  if (n === 1) sparkles.emit(cx, cy, turn, reach);
-  else sparkles.burst(cx, cy, turn, n, reach);
+  for (const [px, py] of copiesOf(x, y)) {
+    const cx = sr.left - r.left + px * A.s, cy = sr.top - r.top + py * A.s;
+    if (n === 1) sparkles.emit(cx, cy, turn, reach);
+    else sparkles.burst(cx, cy, turn, n, reach);
+  }
 }
 
 stage.addEventListener('pointerdown', (e) => {
@@ -176,8 +187,8 @@ stage.addEventListener('pointerdown', (e) => {
   pen = { id: e.pointerId, cx: e.clientX, cy: e.clientY, lx: e.clientX, ly: e.clientY, x, y, sx: x, sy: y,
     moved: false, op: null, len: 0, spark: 0 };
   const w = SIZES[tool.size], start = [Math.round(x), Math.round(y)];
-  if (tool.kind === 'brush') pen.op = { t: 'line', c: tool.color, w, p: start };
-  else if (tool.kind === 'eraser') pen.op = { t: 'erase', w, p: start };
+  if (tool.kind === 'brush') pen.op = mirrorable({ t: 'line', c: tool.color, w, p: start });
+  else if (tool.kind === 'eraser') pen.op = mirrorable({ t: 'erase', w, p: start });
   if (isRainbow(pen.op)) sparkleAt(x, y, 0, 3);
   showLive();
 });
@@ -195,7 +206,7 @@ stage.addEventListener('pointermove', (e) => {
     pen.lx = e.clientX; pen.ly = e.clientY;
   } else if (tool.kind === 'shape' && pen.moved) {
     const [x, y] = toPage(e);
-    pen.op = { t: 'shape', k: tool.shape, c: tool.color, w: SIZES[tool.size], b: boxOf(pen.x, pen.y, x, y) };
+    pen.op = mirrorable({ t: 'shape', k: tool.shape, c: tool.color, w: SIZES[tool.size], b: boxOf(pen.x, pen.y, x, y) });
   }
   showLive();
 });
@@ -216,12 +227,15 @@ function penUp(e) {
   } else if (tool.kind === 'shape') {
     const h = SHAPE_TAP_SIZE / 2;
     const b = g.moved ? boxOf(g.x, g.y, x, y) : boxOf(g.x - h, g.y - h, g.x + h, g.y + h);
-    commit({ t: 'shape', k: tool.shape, c: tool.color, w: SIZES[tool.size], b });
+    commit(mirrorable({ t: 'shape', k: tool.shape, c: tool.color, w: SIZES[tool.size], b }));
     if (tool.color === RAINBOW) sparkleAt(b[0] + b[2] / 2, b[1] + b[3] / 2, 0, 18, Math.max(b[2], b[3]) * A.s / 2);
   } else if (tool.kind === 'bucket' && !g.moved) {
-    const loops = fillRegion(A.ops, g.x, g.y);
-    if (loops && loops.length) {
-      commit({ t: 'fill', c: tool.color, r: loops });
+    // with a mirror, the mirror images of the tap fill too, in one operation (nonzero rule: two taps
+    // in the same area add up instead of cancelling out)
+    const loops = [];
+    for (const [px, py] of copiesOf(g.x, g.y)) loops.push(...(fillRegion(A.ops, px, py) || []));
+    if (loops.length) {
+      commit(tool.mirror > 1 ? { t: 'fill', c: tool.color, r: loops, z: 1 } : { t: 'fill', c: tool.color, r: loops });
       vibrate(12);
       if (tool.color === RAINBOW) sparkleAt(g.x, g.y, 0, 20, 50);
     }
@@ -247,8 +261,33 @@ function clearLive() {
   clearCanvas(live, A.k);
 }
 
-// Toolbar: tools, the shape and size menus, colours.
+// Toolbar: tools, the shape, mirror and size menus, colours.
 const shapeIcon = (k) => `<svg viewBox="-0.2 -0.2 1.4 1.4" class="shape"><path d="${SHAPES[k]}"/></svg>`;
+
+function mirrorIcon(m) {
+  const dot = ([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4"/>`;
+  const axis = (d) => `<path d="${d}" stroke-dasharray="2 2.2" stroke-width="1.4"/>`;
+  if (m === 2) return `<svg viewBox="0 0 24 24">${axis('M12 3v18')}${[[6.5, 12], [17.5, 12]].map(dot).join('')}</svg>`;
+  if (m === 4) {
+    return `<svg viewBox="0 0 24 24">${axis('M12 3v18M3 12h18')}${[[7, 7], [17, 7], [7, 17], [17, 17]].map(dot).join('')}</svg>`;
+  }
+  if (m === 6) {
+    const pts = Array.from({ length: 6 }, (_, i) => [12 + 7.5 * Math.cos(i * Math.PI / 3), 12 + 7.5 * Math.sin(i * Math.PI / 3)]);
+    return `<svg viewBox="0 0 24 24">${pts.map(dot).join('')}<circle cx="12" cy="12" r="1.2"/></svg>`;
+  }
+  return `<svg viewBox="0 0 24 24">${dot([12, 12])}</svg>`;
+}
+
+// Dashed axes over the page while a mirror is on; they are not part of the drawing.
+function updateGuides() {
+  const g = sheet.querySelector('.guides');
+  const line = (deg) => {
+    const a = deg * Math.PI / 180, dx = Math.cos(a) * 1400, dy = Math.sin(a) * 1400;
+    return `<line x1="${(PAGE_W / 2 - dx).toFixed(0)}" y1="${(PAGE_H / 2 - dy).toFixed(0)}" x2="${(PAGE_W / 2 + dx).toFixed(0)}" y2="${(PAGE_H / 2 + dy).toFixed(0)}"/>`;
+  };
+  const axes = { 1: [], 2: [90], 4: [90, 0], 6: [90, 30, 150] }[tool.mirror] || [];
+  g.innerHTML = axes.map(line).join('');
+}
 
 function sizeDot(i) {
   const dot = el('span', 'size-dot');
@@ -266,6 +305,11 @@ function updateTools() {
   shapeBtn.setAttribute('aria-label', t('Formes : {name}', { name: t(SHAPE_NAMES[tool.shape]) }));
   $('#size').replaceChildren(sizeDot(tool.size));
   $('#size').setAttribute('aria-label', t('Épaisseur'));
+  const mirrorBtn = $('#mirror');
+  mirrorBtn.innerHTML = mirrorIcon(tool.mirror);
+  mirrorBtn.classList.toggle('on', tool.mirror > 1);
+  mirrorBtn.setAttribute('aria-label', t('Miroir : {name}', { name: t(MIRROR_NAMES[tool.mirror]) }));
+  updateGuides();
   for (const b of $('#draw-colors').children) b.classList.toggle('sel', b.dataset.color === tool.color);
 }
 
@@ -273,7 +317,16 @@ function openPop(kind) {
   if (!pop.hidden && pop.dataset.kind === kind) { closePop(); return; }
   pop.dataset.kind = kind;
   pop.replaceChildren();
-  if (kind === 'shape') {
+  if (kind === 'mirror') {
+    for (const m of MIRRORS) {
+      const b = el('button', 'tool' + (m === tool.mirror ? ' sel' : ''));
+      b.innerHTML = mirrorIcon(m);
+      b.dataset.mirror = m;
+      b.setAttribute('aria-label', t(MIRROR_NAMES[m]));
+      b.addEventListener('click', () => { tool.mirror = m; closePop(); updateTools(); });
+      pop.append(b);
+    }
+  } else if (kind === 'shape') {
     for (const k of Object.keys(SHAPES)) {
       const b = el('button', 'tool' + (k === tool.shape ? ' sel' : ''));
       b.innerHTML = shapeIcon(k);
@@ -305,6 +358,7 @@ for (const b of document.querySelectorAll('#draw .tool[data-tool]')) {
   });
 }
 $('#size').addEventListener('click', () => openPop('size'));
+$('#mirror').addEventListener('click', () => openPop('mirror'));
 
 for (const c of [...COLORS, RAINBOW]) {
   const b = el('button', 'dot');

@@ -13,6 +13,8 @@ const LONG_PRESS_MS = 450; // holding a zone this long picks its colour
 const FINDABLE_PX = 6;     // a zone narrower than this on screen is hard to spot: the magnifier beckons
 const AUTO_FILL_PX = 6;    // a zone still narrower than this at full zoom, or hidden, comes already coloured
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const CHECKER_PX = 5;      // squares of the checkerboard on the zones left in the chosen colour, on screen
+const CHECKER_GREY = '#d4d4d4';
 
 export const testing = { instant: false };  // tests skip the zoom animation
 const stage = $('#stage');
@@ -42,6 +44,7 @@ export function openPlay(d, profileId, back) {
     z.setAttribute('data-i', i);
     if (P.filled.has(i)) paint(z, d.palette[colors[i]]);
   });
+  buildCheckers();
   buildPalette();  // before measuring: its rows take height from the drawing area
   measureStage();
   fitView();
@@ -92,7 +95,7 @@ function setView(s, tx, ty) {
   const zoomed = s !== P.s;
   P.s = s; P.tx = tx; P.ty = ty;
   P.world.setAttribute('transform', `matrix(${s} 0 0 ${s} ${tx} ${ty})`);
-  if (zoomed) updateLabelVisibility();
+  if (zoomed) { updateLabelVisibility(); sizeCheckers(); }
   scheduleFindHint();
 }
 
@@ -113,6 +116,42 @@ function updateFindHint() {
     if (p.r * P.s >= FINDABLE_PX && sx >= 0 && sy >= 0 && sx <= P.W && sy <= P.H) need = false;
   }
   $('#find').classList.toggle('hint', need);
+}
+
+// The zones to colour show a checkerboard of constant size on screen. A pattern tiles in the
+// coordinates of the zone using it, and zones inside scaled groups have their own scale: one pattern
+// per scale, resized at each zoom.
+function buildCheckers() {
+  const defs = svgEl('defs');
+  const toWorld = P.world.getCTM().inverse();
+  const byScale = new Map();
+  P.checkers = [];
+  P.zones.forEach((z) => {
+    const m = toWorld.multiply(z.getCTM());
+    const key = (Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1).toPrecision(3);
+    let c = byScale.get(key);
+    if (!c) {
+      const el = svgEl('pattern', { id: 'checker' + byScale.size, patternUnits: 'userSpaceOnUse', viewBox: '0 0 2 2', width: 1, height: 1 });
+      el.append(svgEl('rect', { width: 2, height: 2, fill: '#fff' }),
+        svgEl('rect', { width: 1, height: 1, fill: CHECKER_GREY }),
+        svgEl('rect', { x: 1, y: 1, width: 1, height: 1, fill: CHECKER_GREY }));
+      defs.append(el);
+      c = { el, k: parseFloat(key) };
+      byScale.set(key, c);
+      P.checkers.push(c);
+    }
+    z.style.setProperty('--hl', `url(#${c.el.id})`);
+  });
+  P.svg.prepend(defs);
+}
+
+function sizeCheckers() {
+  if (!P.checkers) return;
+  for (const c of P.checkers) {
+    const w = (2 * CHECKER_PX / (P.s * c.k)).toPrecision(4);
+    c.el.setAttribute('width', w);
+    c.el.setAttribute('height', w);
+  }
 }
 
 function buildLabels() {
