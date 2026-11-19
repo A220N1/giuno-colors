@@ -61,7 +61,7 @@ Two more scripts drive VectorCraft (the vector illustration app of the ArtCraft 
 - `tools/from_trace.py` traces a flat-color illustration in a few colors, each traced shape becoming a zone. It suits pictures with clear flat areas and soft cel shading; photos, 3D renders and textured paintings give blotches.
 - `tools/from_lineart.py` takes a line drawing and a colored copy of it with the same framing: the areas closed by the lines become the zones, colored from the copy, and the lines, traced by VectorCraft, are laid over them. Where a gap in the lines leaves an area open, the area is cut along the colors of the copy.
 
-`tools/prepare_scan.py` gets a scanned album page and its printed colored model ready for `from_lineart.py`, with numpy rather than VectorCraft. It turns the line scan into black lines on white and crops it to the drawing, or just inside the frame drawn around it with `--inside-frame`. It whitens the areas given with `--blank`, such as a library stamp, and scales and moves the colored scan so that its lines fall on those of the line scan.
+`tools/prepare_scan.py` gets a scanned album page and its printed colored model ready for `from_lineart.py`, with numpy and scipy rather than VectorCraft. It turns the line scan into black lines on white and crops it to the drawing, or just inside the frame drawn around it with `--inside-frame`. It whitens the areas given with `--blank`, such as a library stamp, and scales and moves the colored scan so that its lines fall on those of the line scan.
 
 ```sh
 python3 tools/from_trace.py --image <picture> --out <drawing.svg> --work <folder on a Windows drive> --vectorcraft <vectorcraft-cli.exe> --title <title>
