@@ -7,8 +7,7 @@
     "magie": "Magic",
     "scenes": "Big scenes",
     "albums": "Old picture books",
-    "details": "Big coloring pages",
-    "tableaux": "Famous paintings"
+    "details": "Big coloring pages"
   },
   "titles": {
     "01_poisson": "The fish",
@@ -36,15 +35,6 @@
     "74_ville": "The town",
     "75_foret": "The enchanted forest",
     "76_recif": "The coral reef",
-    "81_chat": "The cat at the window (Hiroshige)",
-    "83_flamant_rose": "The flamingo (Audubon)",
-    "84_fuji_rouge": "Red Fuji (Hokusai)",
-    "85_vague": "The Great Wave (Hokusai)",
-    "87_aigle": "The eagle in the snow (Hiroshige)",
-    "88_pelican": "The pelican (Audubon)",
-    "89_cardinaux": "The cardinals (Audubon)",
-    "90_passerin": "The painted bunting (Audubon)",
-    "91_oiseau_bleu": "The bluebird (Audubon)",
     "100_chiot_primeveres": "The puppy and the primroses",
     "101_lapins_legumes": "The rabbits and the vegetables",
     "102_chat_corbeille": "The cat and the basket",

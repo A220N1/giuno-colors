@@ -8,7 +8,7 @@ Use it at https://a220n1.github.io/giuno-colors/ and add it to the home screen f
 
 ## What it does
 
-- 59 drawings in nine categories, from 12 zones for a young child to about 500 in the big coloring pages, whose details only show once zoomed in. Nine of them are traced from public-domain paintings and prints (Hokusai, Hiroshige, Audubon), and 25 from Jean Matet's coloring albums of the 1920s, with the colors of their printed models.
+- 50 drawings in eight categories, from 12 zones for a young child to about 500 in the big coloring pages, whose details only show once zoomed in. Half of them come from Jean Matet's coloring albums of the 1920s, with the colors of their printed models.
 - Pick a color, then tap the zones that carry its number; they show a checkerboard until they are filled. Holding a zone picks its color.
 - Pinch to zoom and drag to move. Numbers too small to read appear as you zoom in, and the magnifier jumps to a zone that is left.
 - A blank page for free drawing, with ten kinds of brush (felt pen, pen, pencil, pastel, paintbrush, glitter, neon, a trail of hearts, grass that grows up from the stroke and puffy clouds), a paint bucket for closed areas, an eraser, a finger that spreads the paint it is dragged through, five shapes, 48 stickers (clouds and tufts of grass in the color in use, OpenMoji emojis and the profile animals), four line sizes, 16 colors and a pastel rainbow. A rainbow stroke changes hue along its length and leaves a trail of twinkling stars while it is drawn; the paint bucket and the shapes fill or outline in a rainbow gradient. A mirror repeats every stroke, shape, eraser stroke and fill on the other side of the page, in its four quarters, or six times round the middle like a kaleidoscope, with its axes shown as dashed lines. The page can be white or colored paper, a starry night sky, squared or dotted paper. Two fingers zoom in on the page. A replay button draws the picture again, stroke by stroke, in a few seconds. Undo and redo reach back to the first stroke, even after the drawing was closed. Each child's drawings come first in the gallery.
@@ -50,7 +50,7 @@ python3 tools/scenes.py --sources <folder> --out drawings [--only details/74_vil
 python3 tools/patterns.py --out drawings [--only 70_mandala_fleuri ...]
 ```
 
-`tools/from_painting.py` turns paintings and prints into drawings: it smooths the picture, splits it into regions that follow its shapes, keeps at most 12 colors taken from it, merges the regions too small to tap and traces the borders once for both neighbors. It needs Pillow besides the standard library, and the images listed in its table, which come from the open-access collections of the Art Institute of Chicago, the Metropolitan Museum of Art and the National Gallery of Art (CC0):
+`tools/from_painting.py` turns paintings and prints into drawings (the app no longer includes the ones it made, and it writes to a `drawings/tableaux/` folder that needs its line in `categories.json` again): it smooths the picture, splits it into regions that follow its shapes, keeps at most 12 colors taken from it, merges the regions too small to tap and traces the borders once for both neighbors. It needs Pillow besides the standard library, and the images listed in its table, which come from the open-access collections of the Art Institute of Chicago, the Metropolitan Museum of Art and the National Gallery of Art (CC0):
 
 ```sh
 python3 tools/from_painting.py --sources <folder> --out drawings [--only 85_vague ...]
