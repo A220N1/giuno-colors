@@ -1,7 +1,7 @@
 // Offline support: every file of this version is cached at install, then served from the cache.
 // A new version installs in the background and is used from the next start.
-const VERSION = 'cda302cb';
-const FILES = ["./", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/logo.svg", "index.html", "js/drawings-data.js", "js/drawings.js", "js/gallery.js", "js/main.js", "js/play.js", "js/profiles.js", "js/share.js", "js/store.js", "js/util.js", "manifest.webmanifest", "style.css"];
+const VERSION = '84b98ad5';
+const FILES = ["./", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/logo.svg", "index.html", "js/art.js", "js/artstore.js", "js/draw.js", "js/drawings-data.js", "js/drawings.js", "js/gallery.js", "js/main.js", "js/play.js", "js/profiles.js", "js/share.js", "js/store.js", "js/util.js", "manifest.webmanifest", "style.css"];
 const CACHE = 'giuno-' + VERSION;
 
 self.addEventListener('install', (e) => {

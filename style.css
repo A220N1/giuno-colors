@@ -109,3 +109,35 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 .colors { display: flex; flex-wrap: wrap; gap: 12px; }
 .colors button { width: 40px; height: 40px; border-radius: 50%; }
 .colors button.sel { box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--ink); }
+
+.grow { flex: 1; }
+.icon:disabled { opacity: .3; }
+.icon:disabled:active { background: none; }
+
+.art-row { display: grid; grid-auto-flow: column; grid-auto-columns: min(180px, calc((100% - 14px) / 2)); gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 2px 2px 6px; margin: 0 -2px; }
+.art-row > .card { scroll-snap-align: start; align-self: start; }
+.art-new .page { display: grid; place-items: center; aspect-ratio: 4 / 5; border-radius: 8px; border: 3px dashed #c9c4b8; color: var(--muted); font-size: 56px; font-weight: 300; }
+.art-new b { font-size: 16px; font-weight: 600; }
+canvas.thumb { aspect-ratio: 4 / 5; }
+
+#draw { background: #fff; }
+#draw-stage { flex: 1; position: relative; overflow: hidden; touch-action: none; background: #ebe8e1; }
+.sheet { position: absolute; background: #fff; box-shadow: 0 1px 6px rgba(0, 0, 0, .18); }
+.sheet canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.tools { display: grid; justify-items: center; gap: 8px; padding: 8px 8px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid #eee; background: #fafafa; }
+.toolrow { display: flex; gap: 8px; }
+.tool { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; }
+.tool.sel { background: #fff; box-shadow: 0 0 0 2.5px var(--ink); }
+.tool svg { width: 30px; height: 30px; fill: none; stroke: var(--ink); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.tool svg.shape { width: 28px; height: 28px; }
+.tool svg.shape path { vector-effect: non-scaling-stroke; stroke-width: 2.2px; }
+.size-dot { display: block; border-radius: 50%; }
+.colorgrid { display: grid; grid-template-columns: repeat(8, 38px); gap: 8px; }
+.dot { width: 38px; height: 38px; border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .14); }
+.dot.sel { box-shadow: 0 0 0 3px #fff, 0 0 0 5.5px var(--ink); }
+.pop { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; gap: 6px; padding: 8px; background: #fff; border-radius: 20px; box-shadow: 0 4px 18px rgba(0, 0, 0, .2); }
+@media (orientation: landscape) and (max-height: 520px) {
+  .colorgrid { grid-template-columns: repeat(16, 32px); gap: 6px; }
+  .dot { width: 32px; height: 32px; }
+  .tool { width: 46px; height: 46px; }
+}

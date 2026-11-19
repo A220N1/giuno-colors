@@ -1,11 +1,15 @@
-// The list of drawings for the current child, with each one's progress.
+// The gallery for the current child: free drawings first, then the colouring pages with their progress.
 import { $, el, svgEl, showScreen, face } from './util.js';
 import { drawings, instantiate, paint } from './drawings.js';
 import { getProgress, storageOk } from './store.js';
+import { listArt, newArtId } from './artstore.js';
+import { renderFlat } from './art.js';
 
 const LEVELS = ['', 'Facile', 'Moyen', 'Difficile'];
 
-export function showGallery(profile, onOpen, onWho) {
+let shown = null;  // the latest gallery, so a slow drawing list does not land in a newer one
+
+export function showGallery(profile, onOpen, onWho, onArt) {
   showScreen('gallery');
   const who = $('#who');
   who.replaceChildren(face(profile), el('span', null, profile.name));
@@ -13,6 +17,25 @@ export function showGallery(profile, onOpen, onWho) {
 
   const list = $('#cards');
   list.replaceChildren();
+  const row = el('div', 'art-row');
+  const add = el('button', 'card art-new');
+  add.append(el('span', 'page', '+'), el('b', null, 'Nouveau dessin'));
+  add.addEventListener('click', () => onArt(newArtId()));
+  row.append(add);
+  list.append(el('h2', 'section', 'Mes dessins'), row);
+  const token = shown = {};
+  listArt(profile.id).then((records) => {
+    if (shown !== token) return;
+    for (const r of records) {
+      const card = el('button', 'card art-card');
+      const thumb = renderFlat(r.ops, 360);
+      thumb.className = 'thumb';
+      card.append(thumb);
+      card.addEventListener('click', () => onArt(r.id));
+      row.append(card);
+    }
+  }).catch((e) => console.error('drawings not listed:', e));
+
   let category = null, cards = null;
   for (const d of drawings) {
     if (d.category !== category || !cards) {  // drawings arrive grouped by category

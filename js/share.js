@@ -28,20 +28,26 @@ export async function renderPng(d, filled, width) {
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, width, height);
     ctx.drawImage(img, 0, 0, width, height);
-    return await new Promise((resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG encoding failed'))), 'image/png'));
+    return await canvasPng(canvas);
   } finally {
     URL.revokeObjectURL(url);
   }
 }
 
+export function canvasPng(canvas) {
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG encoding failed'))), 'image/png'));
+}
+
 export async function shareDrawing(d, filled) {
-  const blob = await renderPng(d, filled, 1200);
-  const name = `giuno-${d.id}.png`;
+  return sharePng(await renderPng(d, filled, 1200), `giuno-${d.id}.png`, d.title);
+}
+
+export async function sharePng(blob, name, title) {
   const file = new File([blob], name, { type: 'image/png' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: d.title });
+      await navigator.share({ files: [file], title });
       return 'shared';
     } catch (e) {
       if (e.name === 'AbortError') return 'cancelled';
