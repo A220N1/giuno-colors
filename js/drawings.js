@@ -9,6 +9,7 @@ function parseDrawing(entry) {
     if (root.localName !== 'svg') throw new Error('not an svg');
     return {
       id: entry.id,
+      category: entry.category || '',
       key: entry.id + '.' + entry.hash,  // a changed drawing starts over instead of mixing up zones
       title: root.getAttribute('data-title') || entry.id,
       level: parseInt(root.getAttribute('data-level'), 10) || 1,
@@ -138,8 +139,8 @@ export function analyse(d, art, zones) {
   const pos = zones.map((z, i) => {
     const p = at[i + 1];
     if (p >= 0) return { x: vx + ((p % W) + 0.5) / k, y: vy + (Math.floor(p / W) + 0.5) / k, r: best[i + 1] / 3 / k };
-    const b = z.getBBox();  // too small or hidden for the raster
-    return { x: b.x + b.width / 2, y: b.y + b.height / 2, r: Math.max(1, Math.min(b.width, b.height) / 2) };
+    const b = z.getBBox();  // nothing of it shows: covered by other shapes or too thin for the raster
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2, r: 0, hidden: true };
   });
   return { k, W, H, lab, pos };
 }

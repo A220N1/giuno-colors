@@ -10,6 +10,7 @@ const TAP_REACH_PX = 16;   // a near miss still fills a matching zone this close
 const MAX_ZOOM = 10;       // relative to the fitted view
 const LONG_PRESS_MS = 450; // holding a zone this long picks its colour
 const FINDABLE_PX = 6;     // a zone narrower than this on screen is hard to spot: the magnifier beckons
+const AUTO_FILL_PX = 6;    // a zone still narrower than this at full zoom, or hidden, comes already coloured
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
 export const testing = { instant: false };  // tests skip the zoom animation
@@ -44,6 +45,16 @@ export function openPlay(d, profileId, back) {
   measureStage();
   fitView();
   P.info = analyse(d, g, zones);
+  // a zone nobody can see or touch would keep the drawing from ever being finished
+  const minR = AUTO_FILL_PX / (P.fit * MAX_ZOOM);
+  let auto = 0;
+  P.info.pos.forEach((p, i) => {
+    if (P.filled.has(i) || (!p.hidden && p.r >= minR)) return;
+    P.filled.add(i);
+    paint(zones[i], d.palette[colors[i]]);
+    auto++;
+  });
+  if (auto) buildPalette();  // same swatches, fresh counts
   buildLabels();
   updateProgress();
   const first = nextColor(-1);
@@ -430,5 +441,5 @@ $('#reset').addEventListener('click', async () => {
 
 // Hooks for the automated tests.
 export const debug = {
-  state: () => P, longPress, findZone, updateFindHint, selectColor, nextColor, finish, onStageResize,
+  state: () => P, longPress, findZone, updateFindHint, selectColor, nextColor, finish, onStageResize, setView,
 };
