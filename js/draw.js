@@ -1,11 +1,13 @@
 // The free drawing screen: a blank page with brush, paint bucket, eraser, shapes, undo and redo.
 import { $, el, showScreen, vibrate, inkFor, confirmDialog } from './util.js';
-import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, MIRRORS, BRUSHES, BRUSH_NAMES, PIECEWISE, BACKGROUNDS,
-  backgroundOf, sameBackground, paperColor, drawBackground, drawBase, mirrorPoints, smudgeOp, drawOp, drawPreview, renderLayers, renderFlat, clearCanvas, fillRegion } from './art.js';
+import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, MIRRORS, BRUSHES, BRUSH_NAMES, PIECEWISE, BACKGROUNDS, BG_NAMES, BG_CLOSE_UP,
+  backgroundOf, sameBackground, paperColor, drawBackground, drawBase, mirrorPoints, smudgeOp, drawOp, drawPreview, drawDripping, renderLayers, renderFlat,
+  clearCanvas, fillRegion } from './art.js';
 import { getArt, putArt, deleteArt } from './artstore.js';
 import { sharePng, canvasPng } from './share.js';
 import { sparkler } from './sparkles.js';
 import { STAMPS, stampUrl, isAnimal, isNature, prepareArt, preloadStamps } from './images.js';
+import { isFirework, flakesOf } from './nature.js';
 import { t } from './i18n.js';
 
 const TAP_SLOP_PX = 10;     // finger movement still counted as a tap
@@ -15,9 +17,14 @@ const SHAPE_TAP_SIZE = 180; // a tap with the shape tool drops a shape this big
 const SAVE_DELAY_MS = 400;
 const SHAPE_NAMES = { circle: 'Rond', square: 'Carré', triangle: 'Triangle', star: 'Étoile', heart: 'Cœur' };
 const SPARKLE_EVERY_PX = 9;  // finger travel between two stars of a rainbow stroke
+const STAR_HUE = 0.13;      // the gold of the stars a shooting-star stroke throws in a plain colour
+const DRIP_MS = 1300;       // how long dripping paint keeps running after the stroke
+const SHAKE_ACCEL = 14;     // m/s² on top of gravity: a real shake, not a phone picked up
+const SHAKE_GAP_MS = 1500;  // one snowfall per shake
+const FLAKES = 70;          // flakes a shake lets fall
 const MIRROR_NAMES = { 1: 'Sans miroir', 2: 'Miroir gauche-droite', 4: 'Miroir en quatre', 6: 'Kaléidoscope' };
-const DOT_PX = [6, 11, 18, 28];  // the sizes as shown on their buttons
-const STAMP_SIZES = [80, 130, 190, 260];  // side of a sticker dropped by a tap, by size
+const BAR_PX = [1.5, 2.5, 4, 5.5, 7.5];  // the sizes as bars on the thickness button
+const STAMP_SIZES = [80, 130, 190, 260, 340];  // side of a sticker dropped by a tap, by size
 const STAMP_MIN = 30;  // a drag smaller than this drops a sticker of the chosen size instead
 const MAX_ZOOM = 4;
 
@@ -116,9 +123,11 @@ function applyView() {
 const scale = () => A.s * A.view.z;
 
 function renderAll() {
+  stopDrips();  // everything is drawn whole below, drops at full length
   const bg = backgroundOf(A.ops);
   A.paper = paperColor(bg);
   drawBackground(back, bg, A.k);
+  updateBgButton(bg);
   renderLayers(fills, lines, A.ops, A.k);
   drawBase(baseLayer, A.base, A.k);
   clearCanvas(live, A.k);
@@ -299,6 +308,72 @@ function addPoint(x, y) {
 }
 
 const isRainbow = (op) => op && op.c === RAINBOW;
+// Strokes that throw stars while drawn, and the hue of their stars at a length along them.
+const throwsStars = (op) => op && (op.c === RAINBOW || op.k === 'stars');
+const starHue = (op, len) => (op.c === RAINBOW ? len / RAINBOW_LEN : STAR_HUE);
+
+// Dripping paint runs down for a moment after the stroke, each frame painting longer drops.
+const dripping = new Set();
+function runDrips(op) {
+  const a = A, t0 = performance.now(), run = { raf: 0 };
+  const step = (now) => {
+    if (A !== a || !dripping.has(run)) return;
+    const t = Math.min(1, (now - t0) / DRIP_MS);
+    drawDripping(lines, op, 1 - (1 - t) ** 2, true);
+    if (t < 1) run.raf = requestAnimationFrame(step); else dripping.delete(run);
+  };
+  dripping.add(run);
+  run.raf = requestAnimationFrame(step);
+}
+function stopDrips() {
+  for (const run of dripping) cancelAnimationFrame(run.raf);
+  dripping.clear();
+}
+
+// The burst of a firework sticker over the page, and over its mirror images.
+function fireworkBurst(op) {
+  const [x, y, w] = op.b;
+  const colours = op.c === RAINBOW ? [0, 50, 120, 190, 260, 320].map((h) => `hsl(${h}, 90%, 70%)`)
+    : [op.c === '#ffffff' ? '#ffe28a' : op.c, '#fff3b0', '#ffffff'];
+  for (const [px, py] of copiesOf(x + w / 2, y + w / 2)) {
+    sparkles.firework(A.view.ox + px * scale(), A.view.oy + py * scale(), w * 0.62 * scale(), colours);
+  }
+}
+
+// A shake lets snow (in white) or glitter (in the colour in use) fall over the page; it stays there.
+function shake() {
+  if (!A || A.loading || A.replay) return;
+  const a = A;
+  const op = { t: 'flakes', k: tool.color === '#ffffff' ? 'snow' : 'glitter', c: tool.color, s: Math.floor(Math.random() * 1e9), n: FLAKES };
+  vibrate(30);
+  sparkles.rain(flakesOf(op), (x, y) => (A === a ? [a.view.ox + x * scale(), a.view.oy + y * scale()] : [-99, -99]),
+    () => (A === a ? scale() : 1), () => { if (A === a && !a.loading) commit(op); });
+}
+
+let lastShake = 0;
+addEventListener('devicemotion', (e) => {
+  if (!A) return;
+  let m;
+  const a = e.acceleration;
+  if (a && a.x != null) m = Math.hypot(a.x, a.y, a.z);
+  else {
+    const g = e.accelerationIncludingGravity;
+    if (!g || g.x == null) return;
+    m = Math.abs(Math.hypot(g.x, g.y, g.z) - 9.81);
+  }
+  const now = performance.now();
+  if (m < SHAKE_ACCEL || now - lastShake < SHAKE_GAP_MS) return;
+  lastShake = now;
+  shake();
+});
+
+// iPhones only report motion once asked, from a touch.
+let motionAsked = false;
+function askMotion() {
+  motionAsked = true;
+  const D = window.DeviceMotionEvent;
+  if (D && typeof D.requestPermission === 'function') D.requestPermission().catch(() => {});
+}
 
 // A new operation takes the mirror mode in use.
 function mirrorable(op) {
@@ -320,6 +395,7 @@ function sparkleAt(x, y, turn, n = 1, spread = 0) {
 
 stage.addEventListener('pointerdown', (e) => {
   if (!A || A.loading || e.target.closest('.pop, #zoom-fit')) return;
+  if (!motionAsked) askMotion();
   const r = stage.getBoundingClientRect();
   A.left = r.left; A.top = r.top;
   fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -338,7 +414,7 @@ stage.addEventListener('pointerdown', (e) => {
   }
   else if (tool.kind === 'eraser') pen.op = mirrorable({ t: 'erase', w, p: start });
   else if (tool.kind === 'smudge') pen.op = mirrorable({ t: 'smudge', w, p: start });
-  if (isRainbow(pen.op)) sparkleAt(x, y, 0, 3);
+  if (throwsStars(pen.op)) sparkleAt(x, y, starHue(pen.op, 0), 3);
   pen.from = 0;
   clearCanvas(live, A.k);
   showLive();
@@ -353,9 +429,9 @@ stage.addEventListener('pointermove', (e) => {
   if (pen.op && pen.op.p) {
     const all = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
     for (const ev of all.length ? all : [e]) addPoint(...toPage(ev));
-    if (isRainbow(pen.op)) {
+    if (throwsStars(pen.op)) {
       pen.spark += Math.hypot(e.clientX - pen.lx, e.clientY - pen.ly);
-      for (; pen.spark >= SPARKLE_EVERY_PX; pen.spark -= SPARKLE_EVERY_PX) sparkleAt(pen.sx, pen.sy, pen.len / RAINBOW_LEN);
+      for (; pen.spark >= SPARKLE_EVERY_PX; pen.spark -= SPARKLE_EVERY_PX) sparkleAt(pen.sx, pen.sy, starHue(pen.op, pen.len));
     }
     pen.lx = e.clientX; pen.ly = e.clientY;
   } else if (tool.kind === 'shape' && pen.moved) {
@@ -380,14 +456,18 @@ function penUp(e) {
   if (g.op && g.op.p) {
     const p = g.op.p, qx = Math.round(x), qy = Math.round(y);
     if (g.moved && (qx !== p[p.length - 2] || qy !== p[p.length - 1])) p.push(qx, qy);  // end where the finger left
-    if (g.op.t === 'smudge') { smudgeOp(fills, lines, g.op, g.from); commit(g.op, true); } else commit(g.op);
+    if (g.op.t === 'smudge') { smudgeOp(fills, lines, g.op, g.from); commit(g.op, true); }
+    else if (g.op.k === 'drip') { drawDripping(lines, g.op, 0); commit(g.op, true); runDrips(g.op); }
+    else commit(g.op);
   } else if (e.type !== 'pointerup') {
     return;
   } else if (tool.kind === 'stamp') {
     const h = STAMP_SIZES[tool.size] / 2;
     const b = (g.moved && stampBox(g.x, g.y, x, y)) || boxOf(g.x - h, g.y - h, g.x + h, g.y + h);
-    commit(mirrorable(stampOp(b)));
+    const op = mirrorable(stampOp(b));
+    commit(op);
     vibrate(12);
+    if (isFirework(op.k)) fireworkBurst(op);
   } else if (tool.kind === 'shape') {
     const h = SHAPE_TAP_SIZE / 2;
     const b = g.moved ? boxOf(g.x, g.y, x, y) : boxOf(g.x - h, g.y - h, g.x + h, g.y + h);
@@ -479,6 +559,31 @@ function brushSample(kind, px = 40) {
   return c;
 }
 
+// A background as its button: the whole page in small, or a close-up of a pattern.
+function bgSample(bg, w, h) {
+  const c = document.createElement('canvas');
+  const dpr = window.devicePixelRatio || 1;
+  c.width = Math.round(w * dpr);
+  c.height = Math.round(h * dpr);
+  c.className = 'sample bg';
+  drawBackground(c.getContext('2d'), bg, c.width / (BG_CLOSE_UP.has(bg ? bg.k : 'paper') ? 280 : PAGE_W));
+  return c;
+}
+
+const bgKey = (bg) => bg ? bg.k + (bg.c || '') : 'paper#ffffff';
+const SCENERY_ICON = '<svg viewBox="0 0 24 24" class="scenery"><rect x="3" y="4" width="18" height="16" rx="3" fill="#9fd9ff"/>'
+  + '<circle cx="16.5" cy="9" r="2.6" fill="#ffd54f"/><path d="M3 16.5c3-3.5 5.5-4.5 8.5-2s5.5 1 9.5-1.5V17a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" fill="#7bc464"/></svg>';
+
+// The background button shows the page's background, or a little coloured landscape on white paper,
+// so it stands out among the tools.
+function updateBgButton(bg) {
+  const b = $('#draw-bg'), key = bgKey(bg);
+  if (b.dataset.key === key) return;
+  b.dataset.key = key;
+  if (key === 'paper#ffffff') b.innerHTML = SCENERY_ICON;
+  else b.replaceChildren(bgSample(bg, 26, 33));
+}
+
 function mirrorIcon(m) {
   const dot = ([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4"/>`;
   const axis = (d) => `<path d="${d}" stroke-dasharray="2 2.2" stroke-width="1.4"/>`;
@@ -504,13 +609,32 @@ function updateGuides() {
   g.innerHTML = axes.map(line).join('');
 }
 
-function sizeDot(i) {
-  const dot = el('span', 'size-dot');
-  dot.style.width = dot.style.height = DOT_PX[i] + 'px';
-  if (tool.color === RAINBOW) dot.classList.add('rainbow');
-  else dot.style.background = tool.color;
-  if (tool.color === RAINBOW || inkFor(tool.color) !== '#fff') dot.style.boxShadow = 'inset 0 0 0 1.5px rgba(0, 0, 0, .3)';
-  return dot;
+// Paints an element in the colour in use; a pale colour gets an outline so it shows on white.
+function inColour(e) {
+  if (tool.color === RAINBOW) e.classList.add('rainbow');
+  else e.style.background = tool.color;
+  if (tool.color === RAINBOW || inkFor(tool.color) !== '#fff') e.style.boxShadow = 'inset 0 0 0 1.5px rgba(0, 0, 0, .25)';
+  return e;
+}
+
+// The thickness button: bars from thin to thick, the one in use in the colour in use, so it reads as
+// a choice of thickness and not as one more round tool.
+function sizeBars() {
+  const bars = el('span', 'size-bars');
+  BAR_PX.forEach((h, i) => {
+    const bar = el('i', i === tool.size ? 'on' : null);
+    bar.style.height = h + 'px';
+    bars.append(i === tool.size ? inColour(bar) : bar);
+  });
+  return bars;
+}
+
+// A thickness in the menu: a stroke as thick as it will be drawn on the screen at this zoom.
+function sizeLine(i) {
+  const px = Math.max(2, Math.min(36, SIZES[i] * (A ? scale() : 0.5)));
+  const line = inColour(el('span', 'size-line'));
+  line.style.height = px.toFixed(1) + 'px';
+  return line;
 }
 
 function updateTools() {
@@ -521,7 +645,7 @@ function updateTools() {
   const shapeBtn = $('#draw .tool[data-tool="shape"]');
   shapeBtn.innerHTML = shapeIcon(tool.shape);
   shapeBtn.setAttribute('aria-label', t('Formes : {name}', { name: t(SHAPE_NAMES[tool.shape]) }));
-  $('#size').replaceChildren(sizeDot(tool.size));
+  $('#size').replaceChildren(sizeBars());
   $('#size').setAttribute('aria-label', t('Épaisseur'));
   const stampBtn = $('#draw .tool[data-tool="stamp"]');
   stampBtn.replaceChildren(stampIcon(tool.stamp));
@@ -536,7 +660,7 @@ function updateTools() {
 function openPop(kind) {
   if (!pop.hidden && pop.dataset.kind === kind) { closePop(); return; }
   pop.dataset.kind = kind;
-  pop.classList.remove('grid');
+  pop.classList.remove('grid', 'sizes', 'backgrounds');
   pop.replaceChildren();
   if (kind === 'stamp') {
     pop.classList.add('grid');
@@ -548,15 +672,13 @@ function openPop(kind) {
       pop.append(b);
     }
   } else if (kind === 'bg') {
+    pop.classList.add('backgrounds');
     const current = backgroundOf(A ? A.ops : []);
     for (const bg of BACKGROUNDS) {
-      const b = el('button', 'tool paper' + (sameBackground(bg, current) ? ' sel' : ''));
-      const c = document.createElement('canvas');
-      c.width = 80; c.height = 100;
-      c.className = 'sample';
-      drawBackground(c.getContext('2d'), bg, 0.1);
-      b.append(c);
+      const b = el('button', 'tool' + (sameBackground(bg, current) ? ' sel' : ''));
+      b.append(bgSample(bg, 48, 60), el('span', null, t(BG_NAMES[bg.k])));
       b.dataset.bg = bg.k + (bg.c || '');
+      b.setAttribute('aria-label', t(BG_NAMES[bg.k]));
       b.addEventListener('click', () => {
         closePop();
         if (A && !A.loading && !sameBackground(bg, backgroundOf(A.ops))) commit({ t: 'bg', ...bg });
@@ -591,9 +713,10 @@ function openPop(kind) {
       pop.append(b);
     }
   } else {
+    pop.classList.add('sizes');
     SIZES.forEach((w, i) => {
       const b = el('button', 'tool' + (i === tool.size ? ' sel' : ''));
-      b.append(sizeDot(i));
+      b.append(sizeLine(i));
       b.dataset.size = i;
       b.setAttribute('aria-label', t('Épaisseur {n}', { n: i + 1 }));
       b.addEventListener('click', () => { tool.size = i; closePop(); updateTools(); });
@@ -672,6 +795,7 @@ export const debug = {
   sparkles,
   replay,
   stopReplay,
+  shake,
 };
 
 preloadStamps();

@@ -1,11 +1,71 @@
-// Little stars that twinkle along a rainbow stroke and fade away; they are not part of the drawing.
+// Little stars that twinkle along a rainbow stroke and fade away, the burst of a firework and snow
+// falling from a shake: animations over the page, not part of the drawing.
+import { drawFlake } from './nature.js';
+
 const LIFE_MS = 750;
 const MAX_STARS = 140;
 
 export function sparkler(canvas) {
   const ctx = canvas.getContext('2d');
   const stars = [];
+  const effects = [];  // { t0, dur, draw(age), done() }
   let raf = 0, dpr = 1;
+
+  function play(effect) {
+    effects.push({ ...effect, t0: performance.now() });
+    if (!raf) raf = requestAnimationFrame(frame);
+  }
+
+  // Sparks flying out from (x, y) to about R pixels and falling a little, with a flash first.
+  function firework(x, y, R, colours) {
+    const sparks = Array.from({ length: 28 }, (_, i) => ({
+      a: (i / 28) * Math.PI * 2 + Math.random() * 0.2, sp: 0.7 + Math.random() * 0.4, c: colours[i % colours.length],
+    }));
+    const at = (s, t) => {
+      const e = 1 - (1 - t) ** 3;
+      return [x + Math.sin(s.a) * R * s.sp * e, y - Math.cos(s.a) * R * s.sp * e + R * 0.3 * t * t];
+    };
+    play({
+      dur: 950,
+      draw(t) {
+        if (t < 0.18) {
+          ctx.globalAlpha = 1 - t / 0.18;
+          ctx.fillStyle = '#fff8d6';
+          ctx.beginPath(); ctx.arc(x, y, R * 0.35 * (0.3 + t / 0.18), 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.globalAlpha = Math.min(1, (1 - t) * 2.5);
+        ctx.lineCap = 'round';
+        for (const s of sparks) {
+          const [x0, y0] = at(s, Math.max(0, t - 0.12)), [x1, y1] = at(s, t);
+          ctx.strokeStyle = s.c;
+          ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(x1, y1, 2.2, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      },
+    });
+  }
+
+  // Flakes falling from above the page to their places; `place(x, y)` gives the screen point of a
+  // page point and `scale()` the screen pixels of a page unit, read at each frame (the page may move).
+  function rain(flakes, place, scale, done) {
+    const delays = flakes.map(() => Math.random() * 0.35);
+    play({
+      dur: 1400,
+      done,
+      draw(t) {
+        const s = scale();
+        flakes.forEach((f, i) => {
+          const u = Math.min(1, Math.max(0, (t - delays[i]) / 0.65));
+          if (!u) return;
+          const [sx, sy] = place(f.x, f.y - (f.y + 40) * (1 - u) ** 2);
+          drawFlake(ctx, f, sx, sy, s);
+        });
+      },
+    });
+  }
 
   function resize(w, h) {
     dpr = window.devicePixelRatio || 1;
@@ -68,16 +128,26 @@ export function sparkler(canvas) {
       star(s, Math.max(0, k));
     }
     ctx.globalAlpha = 1;
-    if (stars.length) raf = requestAnimationFrame(frame);
+    for (let i = 0; i < effects.length; i++) {
+      const fx = effects[i], age = (now - fx.t0) / fx.dur;
+      if (age >= 1) {
+        effects.splice(i--, 1);
+        if (fx.done) fx.done();
+        continue;
+      }
+      fx.draw(age);
+    }
+    if (stars.length || effects.length) raf = requestAnimationFrame(frame);
   }
 
   function clear() {
     stars.length = 0;
+    for (const fx of effects.splice(0)) if (fx.done) fx.done();
     cancelAnimationFrame(raf);
     raf = 0;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
 
-  return { resize, emit, burst, clear, count: () => stars.length };
+  return { resize, emit, burst, firework, rain, clear, count: () => stars.length, busy: () => effects.length > 0 };
 }
