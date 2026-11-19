@@ -93,9 +93,12 @@ function fitView() {
   applyView();
 }
 
-// Keep the zoomed page over the middle of the screen.
+const clampZoom = (z) => Math.min(MAX_ZOOM, Math.max(1, z));
+
+// Keep the zoomed page over the middle of the screen. The zoom must be clamped before the offsets
+// are worked out from it, or the page slides away once the fingers go past the maximum.
 function clampView(v) {
-  const z = Math.min(MAX_ZOOM, Math.max(1, v.z));
+  const z = clampZoom(v.z);
   if (z <= 1.001) return { z: 1, ox: (A.W - PAGE_W * A.s) / 2, oy: (A.H - PAGE_H * A.s) / 2 };
   const w = PAGE_W * A.s * z, h = PAGE_H * A.s * z;
   return { z, ox: Math.min(A.W / 2, Math.max(A.W / 2 - w, v.ox)), oy: Math.min(A.H / 2, Math.max(A.H / 2 - h, v.oy)) };
@@ -212,7 +215,7 @@ function startPinch() {
 // While the fingers move, the layers are only stretched; they are drawn again when the fingers lift.
 function movePinch() {
   const now = pinchState(), v0 = pinch.v0;
-  const z = v0.z * now.d / pinch.d;
+  const z = clampZoom(v0.z * now.d / pinch.d);
   const px = (pinch.mx - v0.ox) / (A.s * v0.z), py = (pinch.my - v0.oy) / (A.s * v0.z);
   pinch.v = clampView({ z, ox: now.mx - px * A.s * z, oy: now.my - py * A.s * z });
   const r = pinch.v.z / v0.z;
@@ -406,7 +409,7 @@ stage.addEventListener('wheel', (e) => {
   if (!A || A.loading || pen || pinch) return;
   e.preventDefault();
   const r = stage.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, v = A.view;
-  const z = v.z * Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015));
+  const z = clampZoom(v.z * Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)));
   const px = (mx - v.ox) / (A.s * v.z), py = (my - v.oy) / (A.s * v.z);
   A.view = clampView({ z, ox: mx - px * A.s * z, oy: my - py * A.s * z });
   applyView();
