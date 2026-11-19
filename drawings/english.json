@@ -28,8 +28,6 @@
     "60_mer": "Under the sea",
     "61_ferme": "The farm",
     "62_espace": "In space",
-    "70_mandala_fleuri": "Flower mandala",
-    "71_mandala_soleil": "Sun mandala",
     "72_rosace": "The rose window",
     "73_papillon_vitrail": "Stained-glass butterfly",
     "74_ville": "The town",
@@ -44,21 +42,6 @@
     "106_course_en_sac": "The rabbits' sack race",
     "107_elephant_roulettes": "The elephant on wheels",
     "108_lapin_ballon_canard": "The rabbit, the ball and the duck",
-    "110_cheval_danseuse": "The horse and the dancer",
-    "111_hercule_clown": "The strongman and the clown",
-    "112_clown_cheval": "The clown and the horse",
-    "113_dompteur_lion": "The tamer, the lion and the sheep",
-    "114_ecuyere_ane": "The circus girl and the donkey",
-    "115_poney_ecuyere": "The pony and the circus girl",
-    "116_chiens_savants": "The performing dogs",
-    "120_polichinelle": "Punch and the cello",
-    "121_masque_tambour": "The mask, the hammer and the drum",
-    "122_lampion_tambourin": "The lantern and the tambourine",
-    "130_colin_maillard": "Blind man's buff",
-    "131_saute_mouton": "Leapfrog",
-    "132_la_ronde": "The round dance",
-    "140_auto_bateau_guitare": "The car, the boat and the guitar",
-    "141_voilier_pecheur": "The fisherman's sailboat",
-    "142_pensees": "The pansies and the butterfly"
+    "116_chiens_savants": "The performing dogs"
   }
 }
