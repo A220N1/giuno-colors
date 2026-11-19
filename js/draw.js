@@ -1,11 +1,11 @@
 // The free drawing screen: a blank page with brush, paint bucket, eraser, shapes, undo and redo.
 import { $, el, showScreen, vibrate, inkFor, confirmDialog } from './util.js';
 import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, MIRRORS, BRUSHES, BRUSH_NAMES, PIECEWISE, BACKGROUNDS,
-  backgroundOf, sameBackground, paperColor, drawBackground, drawBase, mirrorPoints, drawOp, drawPreview, renderLayers, renderFlat, clearCanvas, fillRegion } from './art.js';
+  backgroundOf, sameBackground, paperColor, drawBackground, drawBase, mirrorPoints, smudgeOp, drawOp, drawPreview, renderLayers, renderFlat, clearCanvas, fillRegion } from './art.js';
 import { getArt, putArt, deleteArt } from './artstore.js';
 import { sharePng, canvasPng } from './share.js';
 import { sparkler } from './sparkles.js';
-import { STAMPS, stampUrl, isAnimal, prepareArt, preloadStamps } from './images.js';
+import { STAMPS, stampUrl, isAnimal, isNature, prepareArt, preloadStamps } from './images.js';
 import { t } from './i18n.js';
 
 const TAP_SLOP_PX = 10;     // finger movement still counted as a tap
@@ -138,10 +138,11 @@ function onResize() {
 if (typeof ResizeObserver === 'function') new ResizeObserver(onResize).observe(stage);
 addEventListener('resize', onResize);
 
-function commit(op) {
+// `shown`: the operation is already on screen (the finger works as it goes).
+function commit(op, shown = false) {
   A.ops.push(op);
   A.redo = [];
-  showOp(op);
+  if (!shown) showOp(op);
   changed();
 }
 
@@ -234,6 +235,8 @@ function boxOf(x0, y0, x1, y1) {
   return [Math.round(Math.min(x0, x1)), Math.round(Math.min(y0, y1)), Math.round(Math.abs(x1 - x0)), Math.round(Math.abs(y1 - y0))];
 }
 
+const stampOp = (b) => (isNature(tool.stamp) ? { t: 'stamp', k: tool.stamp, b, c: tool.color } : { t: 'stamp', k: tool.stamp, b });
+
 // A sticker stays square: the drag sets its side from the corner where it started.
 function stampBox(x0, y0, x1, y1) {
   const side = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
@@ -268,7 +271,7 @@ function replay() {
     }
     if (R.i >= ops.length) { stopReplay(); return; }
     const op = ops[R.i];
-    if (op.p) {
+    if (op.p && op.t !== 'smudge') {
       const part = { ...op, p: op.p.slice(0, 2 * Math.max(1, Math.floor(target - R.done))) };
       if (op.t === 'line' && PIECEWISE.has(op.k)) R.from = drawPreview(live, part, R.from);
       else { clearCanvas(live, a.k); drawPreview(live, op.t === 'erase' ? { ...part, paper: a.paper } : part); }
@@ -334,6 +337,7 @@ stage.addEventListener('pointerdown', (e) => {
     if (tool.brush !== 'marker') pen.op.k = tool.brush;
   }
   else if (tool.kind === 'eraser') pen.op = mirrorable({ t: 'erase', w, p: start });
+  else if (tool.kind === 'smudge') pen.op = mirrorable({ t: 'smudge', w, p: start });
   if (isRainbow(pen.op)) sparkleAt(x, y, 0, 3);
   pen.from = 0;
   clearCanvas(live, A.k);
@@ -359,7 +363,7 @@ stage.addEventListener('pointermove', (e) => {
     pen.op = mirrorable({ t: 'shape', k: tool.shape, c: tool.color, w: SIZES[tool.size], b: boxOf(pen.x, pen.y, x, y) });
   } else if (tool.kind === 'stamp' && pen.moved) {
     const b = stampBox(pen.x, pen.y, ...toPage(e));
-    pen.op = b ? mirrorable({ t: 'stamp', k: tool.stamp, b }) : null;
+    pen.op = b ? mirrorable(stampOp(b)) : null;
   }
   showLive();
 });
@@ -376,13 +380,13 @@ function penUp(e) {
   if (g.op && g.op.p) {
     const p = g.op.p, qx = Math.round(x), qy = Math.round(y);
     if (g.moved && (qx !== p[p.length - 2] || qy !== p[p.length - 1])) p.push(qx, qy);  // end where the finger left
-    commit(g.op);
+    if (g.op.t === 'smudge') { smudgeOp(fills, lines, g.op, g.from); commit(g.op, true); } else commit(g.op);
   } else if (e.type !== 'pointerup') {
     return;
   } else if (tool.kind === 'stamp') {
     const h = STAMP_SIZES[tool.size] / 2;
     const b = (g.moved && stampBox(g.x, g.y, x, y)) || boxOf(g.x - h, g.y - h, g.x + h, g.y + h);
-    commit(mirrorable({ t: 'stamp', k: tool.stamp, b }));
+    commit(mirrorable(stampOp(b)));
     vibrate(12);
   } else if (tool.kind === 'shape') {
     const h = SHAPE_TAP_SIZE / 2;
@@ -424,6 +428,7 @@ function drawLive() {
   liveRaf = 0;
   if (!A) return;
   const op = pen && pen.op;
+  if (op && op.t === 'smudge') { pen.from = smudgeOp(fills, lines, op, pen.from); return; }  // straight on the paint
   // textured strokes only add their new marks; the others are drawn again whole
   if (op && op.t === 'line' && PIECEWISE.has(op.k)) { pen.from = drawPreview(live, op, pen.from); return; }
   clearCanvas(live, A.k);
@@ -438,7 +443,18 @@ function clearLive() {
 // Toolbar: tools, the brush, shape, mirror and size menus, colours.
 const shapeIcon = (k) => `<svg viewBox="-0.2 -0.2 1.4 1.4" class="shape"><path d="${SHAPES[k]}"/></svg>`;
 
+// A sticker as its button; clouds and grass drawn in the colour in use.
 function stampIcon(k) {
+  if (isNature(k)) {
+    const c = document.createElement('canvas');
+    const dpr = window.devicePixelRatio || 1;
+    c.width = c.height = Math.round(36 * dpr);
+    c.className = 'sample stamp';
+    const ctx = c.getContext('2d');
+    ctx.setTransform(c.width / 100, 0, 0, c.width / 100, 0, 0);
+    drawOp(null, ctx, { t: 'stamp', k, b: [6, 10, 88, 80], c: tool.color });
+    return c;
+  }
   const img = el('img', isAnimal(k) ? 'sample round' : 'sample');
   img.src = stampUrl(k);
   img.alt = '';

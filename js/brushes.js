@@ -8,18 +8,18 @@ export const RAINBOW_LEN = 600;  // page units of stroke for one full turn of th
 export const rainbowAt = (turn) => `hsl(${Math.round((((turn % 1) + 1) % 1) * 360)}, 88%, 76%)`;
 export const HEART = 'M.5 .24C.42 .06 .27 0 .18 0 .07 0 0 .1 0 .26 0 .52 .26 .74 .5 1 .74 .74 1 .52 1 .26 1 .1 .93 0 .82 0 .73 0 .58 .06 .5 .24Z';
 
-export const BRUSHES = ['marker', 'pen', 'pencil', 'pastel', 'paint', 'glitter', 'neon', 'hearts'];
+export const BRUSHES = ['marker', 'pen', 'pencil', 'pastel', 'paint', 'glitter', 'neon', 'hearts', 'grass', 'clouds'];
 export const BRUSH_NAMES = {
   marker: 'Feutre', pen: 'Stylo', pencil: 'Crayon', pastel: 'Pastel', paint: 'Pinceau',
-  glitter: 'Paillettes', neon: 'Néon', hearts: 'Cœurs',
+  glitter: 'Paillettes', neon: 'Néon', hearts: 'Cœurs', grass: 'Herbe', clouds: 'Nuages',
 };
 // Kinds drawn mark by mark: while drawing, only the new marks are added to the screen.
-export const PIECEWISE = new Set(['pencil', 'pastel', 'paint', 'hearts']);
+export const PIECEWISE = new Set(['pencil', 'pastel', 'paint', 'hearts', 'grass', 'clouds']);
 
 // Width of the line a stroke makes for the paint bucket, which needs it whole.
 export function wallWidth(op) {
   const k = op.k || 'marker';
-  return op.w * (k === 'pen' ? 0.4 : k === 'pastel' ? 1.15 : k === 'neon' ? 0.7 : 1);
+  return op.w * (k === 'pen' ? 0.4 : k === 'pastel' ? 1.15 : k === 'neon' ? 0.7 : k === 'clouds' ? 1.3 : k === 'grass' ? 0.6 : 1);
 }
 
 // ---- colours
@@ -150,7 +150,7 @@ function strokeLine(ctx, op, width, style) {
 }
 
 // Marks every `spacing` units along the recorded points, from mark `from` on; returns the next mark.
-function along(p, spacing, from, mark) {
+export function along(p, spacing, from, mark) {
   const n = p.length / 2;
   if (n === 1) {
     if (from === 0) mark(0, p[0], p[1], 1, 0, 0);
@@ -231,6 +231,53 @@ function hearts(ctx, op, from) {
   });
 }
 
+// Blades of grass growing up from the stroke, whatever its direction, leaning a little either way.
+function grass(ctx, op, from) {
+  const seed = seedOf(op), colour = colourOf(op), pt = painter(ctx), w = op.w;
+  const next = along(op.p, Math.max(2.5, w * 0.28), from, (k, x, y, nx, ny, len) => {
+    const rgb = colour(len);
+    const height = w * (1.2 + 1.3 * rnd(seed, k, 0)), lean = (rnd(seed, k, 1) - 0.5) * 0.8;
+    const bx = x + nx * (rnd(seed, k, 2) - 0.5) * w * 0.3, by = y + ny * (rnd(seed, k, 2) - 0.5) * w * 0.3;
+    const hw = Math.max(1.2, w * 0.11);
+    const tx = bx + Math.sin(lean) * height, ty = by - Math.cos(lean) * height;
+    const p = pt.path(css(rgb, [-0.18, -0.05, 0.1][Math.floor(rnd(seed, k, 3) * 3)]));
+    p.moveTo(bx - hw, by);
+    p.quadraticCurveTo(bx - hw * 0.2 + (tx - bx) * 0.2, (by + ty) / 2, tx, ty);
+    p.quadraticCurveTo(bx + hw * 0.7 + (tx - bx) * 0.25, (by + ty) / 2, bx + hw, by);
+    p.closePath();
+  });
+  pt.flush();
+  return next;
+}
+
+// Round puffs of varied sizes, each laid on its own soft shadow a little lower: the shadows of the
+// later puffs shade the bottom of the earlier ones, as under a cumulus. No outline, so no beads.
+function clouds(ctx, op, from) {
+  const seed = seedOf(op), colour = colourOf(op), w = op.w;
+  return along(op.p, Math.max(3, w * 0.3), from, (k, x, y, nx, ny, len) => {
+    const rgb = colour(len);
+    const r = w * (0.5 + 0.55 * rnd(seed, k, 0) ** 1.5);
+    const off = (rnd(seed, k, 1) - 0.5) * w * 0.7;
+    const cx = x + nx * off, cy = y + ny * off - r * 0.15;
+    const pale = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2] > 225;
+    const shadow = ctx.createRadialGradient(cx, cy + r * 0.3, r * 0.4, cx, cy + r * 0.3, r * 1.05);
+    shadow.addColorStop(0, pale ? 'rgba(170,186,206,0.55)' : css(rgb, -0.25, 0.55));
+    shadow.addColorStop(1, pale ? 'rgba(170,186,206,0)' : css(rgb, -0.25, 0));
+    ctx.fillStyle = shadow;
+    ctx.beginPath();
+    ctx.arc(cx, cy + r * 0.3, r * 1.05, 0, Math.PI * 2);
+    ctx.fill();
+    const body = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.3, r * 0.1, cx, cy, r);
+    body.addColorStop(0, css(rgb, 0.45));
+    body.addColorStop(0.85, css(rgb));
+    body.addColorStop(1, css(rgb, 0, 0.9));
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
 function glitter(ctx, op, from) {
   if (from === 0) strokeLine(ctx, op, op.w, (c, rgb) => { c.strokeStyle = css(rgb); });
   const seed = seedOf(op), colour = colourOf(op), pt = painter(ctx), w = op.w;
@@ -269,6 +316,8 @@ export function drawStroke(ctx, op, from = 0) {
     case 'glitter': return glitter(ctx, op, from);
     case 'neon': neon(ctx, op); return 0;
     case 'hearts': return hearts(ctx, op, from);
+    case 'grass': return grass(ctx, op, from);
+    case 'clouds': return clouds(ctx, op, from);
     default: strokeLine(ctx, op, op.w, (c, rgb) => { c.strokeStyle = css(rgb); }); return 0;
   }
 }
