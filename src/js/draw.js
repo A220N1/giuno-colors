@@ -1,6 +1,6 @@
 // The free drawing screen: a blank page with brush, paint bucket, eraser, shapes, undo and redo.
 import { $, el, showScreen, vibrate, inkFor, confirmDialog } from './util.js';
-import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, MIRRORS, BRUSHES, BRUSH_NAMES, PIECEWISE, BACKGROUNDS,
+import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, MIRRORS, BRUSHES, BRUSH_NAMES, PIECEWISE, BACKGROUNDS, BG_NAMES, BG_CLOSE_UP,
   backgroundOf, sameBackground, paperColor, drawBackground, drawBase, mirrorPoints, smudgeOp, drawOp, drawPreview, renderLayers, renderFlat, clearCanvas, fillRegion } from './art.js';
 import { getArt, putArt, deleteArt } from './artstore.js';
 import { sharePng, canvasPng } from './share.js';
@@ -16,8 +16,8 @@ const SAVE_DELAY_MS = 400;
 const SHAPE_NAMES = { circle: 'Rond', square: 'Carré', triangle: 'Triangle', star: 'Étoile', heart: 'Cœur' };
 const SPARKLE_EVERY_PX = 9;  // finger travel between two stars of a rainbow stroke
 const MIRROR_NAMES = { 1: 'Sans miroir', 2: 'Miroir gauche-droite', 4: 'Miroir en quatre', 6: 'Kaléidoscope' };
-const DOT_PX = [6, 11, 18, 28];  // the sizes as shown on their buttons
-const STAMP_SIZES = [80, 130, 190, 260];  // side of a sticker dropped by a tap, by size
+const BAR_PX = [1.5, 2.5, 4, 5.5, 7.5];  // the sizes as bars on the thickness button
+const STAMP_SIZES = [80, 130, 190, 260, 340];  // side of a sticker dropped by a tap, by size
 const STAMP_MIN = 30;  // a drag smaller than this drops a sticker of the chosen size instead
 const MAX_ZOOM = 4;
 
@@ -119,6 +119,7 @@ function renderAll() {
   const bg = backgroundOf(A.ops);
   A.paper = paperColor(bg);
   drawBackground(back, bg, A.k);
+  updateBgButton(bg);
   renderLayers(fills, lines, A.ops, A.k);
   drawBase(baseLayer, A.base, A.k);
   clearCanvas(live, A.k);
@@ -479,6 +480,31 @@ function brushSample(kind, px = 40) {
   return c;
 }
 
+// A background as its button: the whole page in small, or a close-up of a pattern.
+function bgSample(bg, w, h) {
+  const c = document.createElement('canvas');
+  const dpr = window.devicePixelRatio || 1;
+  c.width = Math.round(w * dpr);
+  c.height = Math.round(h * dpr);
+  c.className = 'sample bg';
+  drawBackground(c.getContext('2d'), bg, c.width / (BG_CLOSE_UP.has(bg ? bg.k : 'paper') ? 280 : PAGE_W));
+  return c;
+}
+
+const bgKey = (bg) => bg ? bg.k + (bg.c || '') : 'paper#ffffff';
+const SCENERY_ICON = '<svg viewBox="0 0 24 24" class="scenery"><rect x="3" y="4" width="18" height="16" rx="3" fill="#9fd9ff"/>'
+  + '<circle cx="16.5" cy="9" r="2.6" fill="#ffd54f"/><path d="M3 16.5c3-3.5 5.5-4.5 8.5-2s5.5 1 9.5-1.5V17a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" fill="#7bc464"/></svg>';
+
+// The background button shows the page's background, or a little coloured landscape on white paper,
+// so it stands out among the tools.
+function updateBgButton(bg) {
+  const b = $('#draw-bg'), key = bgKey(bg);
+  if (b.dataset.key === key) return;
+  b.dataset.key = key;
+  if (key === 'paper#ffffff') b.innerHTML = SCENERY_ICON;
+  else b.replaceChildren(bgSample(bg, 26, 33));
+}
+
 function mirrorIcon(m) {
   const dot = ([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4"/>`;
   const axis = (d) => `<path d="${d}" stroke-dasharray="2 2.2" stroke-width="1.4"/>`;
@@ -504,13 +530,32 @@ function updateGuides() {
   g.innerHTML = axes.map(line).join('');
 }
 
-function sizeDot(i) {
-  const dot = el('span', 'size-dot');
-  dot.style.width = dot.style.height = DOT_PX[i] + 'px';
-  if (tool.color === RAINBOW) dot.classList.add('rainbow');
-  else dot.style.background = tool.color;
-  if (tool.color === RAINBOW || inkFor(tool.color) !== '#fff') dot.style.boxShadow = 'inset 0 0 0 1.5px rgba(0, 0, 0, .3)';
-  return dot;
+// Paints an element in the colour in use; a pale colour gets an outline so it shows on white.
+function inColour(e) {
+  if (tool.color === RAINBOW) e.classList.add('rainbow');
+  else e.style.background = tool.color;
+  if (tool.color === RAINBOW || inkFor(tool.color) !== '#fff') e.style.boxShadow = 'inset 0 0 0 1.5px rgba(0, 0, 0, .25)';
+  return e;
+}
+
+// The thickness button: bars from thin to thick, the one in use in the colour in use, so it reads as
+// a choice of thickness and not as one more round tool.
+function sizeBars() {
+  const bars = el('span', 'size-bars');
+  BAR_PX.forEach((h, i) => {
+    const bar = el('i', i === tool.size ? 'on' : null);
+    bar.style.height = h + 'px';
+    bars.append(i === tool.size ? inColour(bar) : bar);
+  });
+  return bars;
+}
+
+// A thickness in the menu: a stroke as thick as it will be drawn on the screen at this zoom.
+function sizeLine(i) {
+  const px = Math.max(2, Math.min(36, SIZES[i] * (A ? scale() : 0.5)));
+  const line = inColour(el('span', 'size-line'));
+  line.style.height = px.toFixed(1) + 'px';
+  return line;
 }
 
 function updateTools() {
@@ -521,7 +566,7 @@ function updateTools() {
   const shapeBtn = $('#draw .tool[data-tool="shape"]');
   shapeBtn.innerHTML = shapeIcon(tool.shape);
   shapeBtn.setAttribute('aria-label', t('Formes : {name}', { name: t(SHAPE_NAMES[tool.shape]) }));
-  $('#size').replaceChildren(sizeDot(tool.size));
+  $('#size').replaceChildren(sizeBars());
   $('#size').setAttribute('aria-label', t('Épaisseur'));
   const stampBtn = $('#draw .tool[data-tool="stamp"]');
   stampBtn.replaceChildren(stampIcon(tool.stamp));
@@ -536,7 +581,7 @@ function updateTools() {
 function openPop(kind) {
   if (!pop.hidden && pop.dataset.kind === kind) { closePop(); return; }
   pop.dataset.kind = kind;
-  pop.classList.remove('grid');
+  pop.classList.remove('grid', 'sizes', 'backgrounds');
   pop.replaceChildren();
   if (kind === 'stamp') {
     pop.classList.add('grid');
@@ -548,15 +593,13 @@ function openPop(kind) {
       pop.append(b);
     }
   } else if (kind === 'bg') {
+    pop.classList.add('backgrounds');
     const current = backgroundOf(A ? A.ops : []);
     for (const bg of BACKGROUNDS) {
-      const b = el('button', 'tool paper' + (sameBackground(bg, current) ? ' sel' : ''));
-      const c = document.createElement('canvas');
-      c.width = 80; c.height = 100;
-      c.className = 'sample';
-      drawBackground(c.getContext('2d'), bg, 0.1);
-      b.append(c);
+      const b = el('button', 'tool' + (sameBackground(bg, current) ? ' sel' : ''));
+      b.append(bgSample(bg, 48, 60), el('span', null, t(BG_NAMES[bg.k])));
       b.dataset.bg = bg.k + (bg.c || '');
+      b.setAttribute('aria-label', t(BG_NAMES[bg.k]));
       b.addEventListener('click', () => {
         closePop();
         if (A && !A.loading && !sameBackground(bg, backgroundOf(A.ops))) commit({ t: 'bg', ...bg });
@@ -591,9 +634,10 @@ function openPop(kind) {
       pop.append(b);
     }
   } else {
+    pop.classList.add('sizes');
     SIZES.forEach((w, i) => {
       const b = el('button', 'tool' + (i === tool.size ? ' sel' : ''));
-      b.append(sizeDot(i));
+      b.append(sizeLine(i));
       b.dataset.size = i;
       b.setAttribute('aria-label', t('Épaisseur {n}', { n: i + 1 }));
       b.addEventListener('click', () => { tool.size = i; closePop(); updateTools(); });

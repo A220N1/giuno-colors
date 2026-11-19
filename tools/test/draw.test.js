@@ -114,6 +114,7 @@ run(async () => {
   pickColor(GREEN);
   check(draw.debug.tool.kind === 'brush', 'a colour after the eraser goes back to the brush');
   $('#size').click();
+  check($('#draw-pop').querySelectorAll('[data-size]').length === art.SIZES.length && art.SIZES.length === 5, 'five line sizes');
   $('#draw-pop [data-size="3"]').click();
   drag(stage, segment(30, 960, 770, 960));
   check(A.ops[A.ops.length - 1].w === art.SIZES[3], 'thick brush');
@@ -292,13 +293,28 @@ run(async () => {
 
   // background: the night sky, undone
   $('#draw-bg').click();
-  check($('#draw-pop').querySelectorAll('[data-bg]').length === 9, 'nine backgrounds');
+  const tiles = [...$('#draw-pop').querySelectorAll('[data-bg]')];
+  check(tiles.length === art.BACKGROUNDS.length && tiles.length === 10, `${tiles.length} backgrounds`);
+  // every button shows its background: only the white page is plain white
+  const plain = tiles.filter((b) => {
+    const c = b.querySelector('canvas'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    for (let i = 0; i < d.length; i += 4) if (d[i] < 235 || d[i + 1] < 235 || d[i + 2] < 235) return false;
+    return true;
+  }).map((b) => b.dataset.bg);
+  check(plain.length === 1 && plain[0] === 'paper#ffffff', `background buttons show their picture (plain: ${plain.join(' ')})`);
+  check($('#draw-bg svg.scenery'), 'background button shows a landscape on white paper');
   $('#draw-pop [data-bg="night"]').click();
   const dark = (c) => parseInt(c.slice(1, 3), 16) < 90 && parseInt(c.slice(5, 7), 16) < 140;
   check(K.ops[K.ops.length - 1].t === 'bg' && dark(pixel(flat(), 795, 995)), 'night background');
   $('#undo').click();
   check(pixel(flat(), 795, 995) === WHITE, 'background undone');
   $('#redo').click();
+  check($('#draw-bg canvas.bg'), 'background button shows the night sky');
+  $('#draw-bg').click();
+  $('#draw-pop [data-bg="sea"]').click();
+  const sea = pixel(flat(), 400, 400);
+  check(parseInt(sea.slice(5, 7), 16) > parseInt(sea.slice(1, 3), 16) + 60, `sea background is blue (${sea})`);
+  $('#undo').click();
 
   // replay: the drawing draws itself again and ends as it was; a tap stops it
   const before = [[200, 60], [600, 600], [400, 860], [795, 995]].map(([x, y]) => pixel(flat(), x, y));

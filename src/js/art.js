@@ -9,7 +9,7 @@
 //   { t: 'fill', c, r: [[x0, y0, x1, y1, ...], ...] } closed loops, even-odd rule
 //   { t: 'stamp', k, b: [x, y, width, height], c? }  sticker: 'e' + OpenMoji code, a profile animal, or
 //                                                    a cloud or tuft of grass ('vcloud1'…) in colour c
-//   { t: 'bg', k: 'paper' | 'night' | 'grid' | 'dots', c }  page background, the last one counts
+//   { t: 'bg', k, c? }                              page background (see backgrounds.js), the last one counts
 //   { t: 'smudge', w, p: [...] }                    finger: spreads the paint of both layers along it
 // A line may carry k, its kind of brush (see brushes.js); without it, the felt pen.
 // The colour c is '#rrggbb' or 'rainbow': pastel hues turning along a stroke, or across a fill or shape.
@@ -19,9 +19,10 @@
 import { RAINBOW, rainbowAt, HEART, linePath, drawStroke, wallWidth, along } from './brushes.js';
 import { stampImage, isAnimal, isNature } from './images.js';
 import { drawNature } from './nature.js';
+import { backgroundOf, paintBackground } from './backgrounds.js';
 
 export const PAGE_W = 800, PAGE_H = 1000;
-export const SIZES = [6, 14, 28, 52];
+export const SIZES = [6, 14, 28, 52, 84];
 export const COLORS = [
   '#1f1f1f', '#9e9e9e', '#8d5a3b', '#e53935', '#fb8c00', '#fdd835', '#9ccc65', '#2e9d4a',
   '#ffffff', '#f5c9a0', '#f06292', '#c39bd3', '#8e44ad', '#1e63c9', '#64b5f6', '#26c6da',
@@ -165,60 +166,11 @@ function drawStamp(ctx, op) {
   ctx.restore();
 }
 
-// Page backgrounds: plain papers, a night sky, squared and dotted paper.
-export const BACKGROUNDS = [
-  { k: 'paper', c: '#ffffff' }, { k: 'paper', c: '#fdf1d8' }, { k: 'paper', c: '#fde2ea' }, { k: 'paper', c: '#e0effc' },
-  { k: 'paper', c: '#dff4e7' }, { k: 'paper', c: '#fff5bf' }, { k: 'night' }, { k: 'grid' }, { k: 'dots' },
-];
-const hashRand = (i, j) => { const v = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return v - Math.floor(v); };
-
-export function backgroundOf(ops) {
-  for (let i = ops.length - 1; i >= 0; i--) if (ops[i].t === 'bg') return ops[i];
-  return null;
-}
-
-export const sameBackground = (a, b) => (a ? a.k : 'paper') === (b ? b.k : 'paper') && (a && a.c || '#ffffff') === (b && b.c || '#ffffff');
-
-// The colour the eraser shows while erasing: roughly the background.
-export function paperColor(bg) {
-  if (!bg || bg.k === 'paper') return bg ? bg.c : '#ffffff';
-  return bg.k === 'night' ? '#1d2552' : '#ffffff';
-}
+export { BACKGROUNDS, BG_NAMES, BG_CLOSE_UP, backgroundOf, sameBackground, paperColor } from './backgrounds.js';
 
 export function drawBackground(ctx, bg, k) {
   clearCanvas(ctx, k);
-  const kind = bg ? bg.k : 'paper';
-  if (kind === 'night') {
-    const g = ctx.createLinearGradient(0, 0, 0, PAGE_H);
-    g.addColorStop(0, '#0d1636');
-    g.addColorStop(1, '#2d3166');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, PAGE_W, PAGE_H);
-    ctx.fillStyle = '#fff';
-    for (let i = 0; i < 150; i++) {
-      ctx.globalAlpha = 0.35 + 0.65 * hashRand(i, 3);
-      ctx.beginPath();
-      ctx.arc(hashRand(i, 0) * PAGE_W, hashRand(i, 1) * PAGE_H, 0.8 + 2 * hashRand(i, 2) ** 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    return;
-  }
-  ctx.fillStyle = kind === 'paper' && bg ? bg.c : '#ffffff';
-  ctx.fillRect(0, 0, PAGE_W, PAGE_H);
-  if (kind === 'grid') {
-    ctx.strokeStyle = '#c9dcf3';
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    for (let x = 40; x < PAGE_W; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, PAGE_H); }
-    for (let y = 40; y < PAGE_H; y += 40) { ctx.moveTo(0, y); ctx.lineTo(PAGE_W, y); }
-    ctx.stroke();
-  } else if (kind === 'dots') {
-    ctx.fillStyle = '#bfc4d6';
-    ctx.beginPath();
-    for (let x = 40; x < PAGE_W; x += 40) for (let y = 40; y < PAGE_H; y += 40) { ctx.moveTo(x + 2.6, y); ctx.arc(x, y, 2.6, 0, Math.PI * 2); }
-    ctx.fill();
-  }
+  paintBackground(ctx, bg);
 }
 
 // Finger: soft dabs along the stroke, each made of the paint a little behind it, laid at partial
