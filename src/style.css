@@ -38,6 +38,8 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 .avatar.add .face { background: #fff; color: var(--muted); border: 3px dashed #c9c4b8; box-shadow: none; }
 .avatar:active .face { transform: scale(.96); }
 
+.section { margin: 24px 0 10px; font-size: 18px; font-weight: 700; }
+#cards > .section:first-child { margin-top: 4px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
 .card { background: #fff; border-radius: 16px; box-shadow: 0 1px 3px rgba(0, 0, 0, .12); padding: 10px; display: flex; flex-direction: column; gap: 8px; text-align: left; }
 .card:active { transform: scale(.98); }

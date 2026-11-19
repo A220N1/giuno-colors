@@ -1,4 +1,4 @@
-"""Generate the three sample drawings of drawings/ (fish, house, hot air balloon)."""
+"""Generate the three hand-made drawings (fish, house, hot air balloon) into their category folders."""
 import argparse
 import math
 from pathlib import Path
@@ -265,8 +265,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("out_dir", type=Path)
     args = ap.parse_args()
-    for name, make in [("01_poisson", fish), ("02_maison", house), ("03_montgolfiere", balloon)]:
-        path = args.out_dir / f"{name}.svg"
+    for folder, name, make in [("animaux", "01_poisson", fish), ("nature", "02_maison", house),
+                               ("vehicules", "03_montgolfiere", balloon)]:
+        path = args.out_dir / folder / f"{name}.svg"
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(make(), encoding="utf-8")
         print(path, path.stat().st_size)
 

@@ -13,7 +13,14 @@ export function showGallery(profile, onOpen, onWho) {
 
   const list = $('#cards');
   list.replaceChildren();
+  let category = null, cards = null;
   for (const d of drawings) {
+    if (d.category !== category || !cards) {  // drawings arrive grouped by category
+      category = d.category;
+      if (category) list.append(el('h2', 'section', category));
+      cards = el('div', 'cards');
+      list.append(cards);
+    }
     const { g, zones, colors } = instantiate(d);
     const filled = new Set(getProgress(profile.id, d.key).filter((i) => i < zones.length));
     zones.forEach((z, i) => { if (filled.has(i)) paint(z, d.palette[colors[i]]); });
@@ -31,7 +38,7 @@ export function showGallery(profile, onOpen, onWho) {
     const card = el('button', 'card');
     card.append(thumb, meta, bar);
     card.addEventListener('click', () => onOpen(d));
-    list.append(card);
+    cards.append(card);
   }
   $('#storage-note').hidden = storageOk();
 }

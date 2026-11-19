@@ -8,6 +8,7 @@ Use it at https://a220n1.github.io/giuno-colors/ and add it to the home screen f
 
 ## What it does
 
+- 18 drawings in six categories, from 12 zones for a young child to about 70 for the large scenes.
 - Pick a color, then tap the zones that carry its number. Holding a zone picks its color.
 - Pinch to zoom and drag to move. Numbers too small to read appear as you zoom in, and the magnifier jumps to a zone that is left.
 - Each child gets a profile with its own progress.
@@ -29,9 +30,18 @@ python3 -m http.server --directory site 8000
 
 ## Drawings
 
-Each drawing is an SVG file in `drawings/`. The root `<svg>` has a `viewBox`, a `data-title`, a `data-level` (1 easy, 2 medium, 3 hard) and a `data-palette` listing `#rrggbb` colors. Any `path`, `rect`, `circle`, `ellipse` or `polygon` with `data-c="n"` is a zone to fill with palette color `n`, counted from 1. Later zones may cover earlier ones. Other elements are drawn as they are and do not react to taps.
+Drawings are SVG files grouped by category. `drawings/categories.json` lists the categories in gallery order, each with its folder and the name shown in the app, and each folder holds the drawings of its category.
 
-`build.py` checks every drawing before bundling it. `tools/make_sample_drawings.py` regenerates the three sample drawings.
+The root `<svg>` of a drawing has a `viewBox`, a `data-title`, a `data-level` (1 easy, 2 medium, 3 hard) and a `data-palette` listing `#rrggbb` colors. Any `path`, `rect`, `circle`, `ellipse` or `polygon` with `data-c="n"` is a zone to fill with palette color `n`, counted from 1. Later zones may cover earlier ones. Other elements are drawn as they are and do not react to taps. A zone that cannot be seen, or that stays too small to touch even at full zoom, starts already colored. `build.py` checks every drawing before bundling it.
+
+Most drawings are scenes: [OpenMoji](https://openmoji.org) emojis placed on a drawn background. `tools/scenes.py` describes them and writes their files with `tools/make_drawing.py`, which turns each color shape of an emoji into a zone, keeps the outlines, gives close colors one palette entry and leaves shapes too small to color as they are. Background colors never merge with each other. The scenes need the OpenMoji color SVG of each emoji they use, named `<hexcode>.svg`, from the [`color/svg`](https://github.com/hfg-gmuend/openmoji/tree/master/color/svg) folder of the OpenMoji repository:
+
+```sh
+python3 tools/scenes.py --list-emoji          # codes of the emojis to download
+python3 tools/scenes.py --sources <folder> --out drawings
+```
+
+`tools/make_sample_drawings.py` regenerates the three hand-made drawings.
 
 ## Layout
 

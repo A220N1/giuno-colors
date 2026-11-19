@@ -60,23 +60,34 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", type=Path, required=True, help="folder to write, new or empty")
     ap.add_argument("--drawings", type=Path, default=HERE / "drawings",
-                    help="folder of SVG drawings (default: drawings/ next to this script)")
+                    help="drawings folder: categories.json and one sub-folder of SVG files per category "
+                         "(default: drawings/ next to this script)")
     args = ap.parse_args()
 
     if args.out.exists() and any(args.out.iterdir()):
         sys.exit(f"error: {args.out} is not empty")
-    svgs = sorted(args.drawings.glob("*.svg"))
-    if not svgs:
-        sys.exit(f"error: no .svg in {args.drawings}")
+    categories = json.loads((args.drawings / "categories.json").read_text(encoding="utf-8"))
+    folders = {c["folder"] for c in categories}
+    stray = [p for p in args.drawings.rglob("*.svg") if p.parent.parent != args.drawings or p.parent.name not in folders]
+    if stray:
+        sys.exit("error: drawings outside a category folder of categories.json: "
+                 + ", ".join(str(p.relative_to(args.drawings)) for p in stray))
 
     entries = []
-    for path in svgs:
-        try:
-            entry, n_zones, n_colors = load_drawing(path)
-        except (ValueError, ET.ParseError) as e:
-            sys.exit(f"error: {path.name}: {e}")
-        entries.append(entry)
-        print(f"{path.name}: {n_zones} zones, {n_colors} colours")
+    for cat in categories:
+        for path in sorted((args.drawings / cat["folder"]).glob("*.svg")):
+            try:
+                entry, n_zones, n_colors = load_drawing(path)
+            except (ValueError, ET.ParseError) as e:
+                sys.exit(f"error: {cat['folder']}/{path.name}: {e}")
+            entry["category"] = cat["name"]
+            entries.append(entry)
+            print(f"{cat['folder']}/{path.name}: {n_zones} zones, {n_colors} colours")
+    if not entries:
+        sys.exit(f"error: no drawing in {args.drawings}")
+    ids = [e["id"] for e in entries]
+    if len(set(ids)) != len(ids):
+        sys.exit("error: two drawings share a file name: " + ", ".join(sorted({i for i in ids if ids.count(i) > 1})))
 
     files = {}
     src = HERE / "src"
