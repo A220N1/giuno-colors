@@ -1,17 +1,22 @@
-// Free drawings, kept in IndexedDB: a few dozen of them would not fit in localStorage.
-// Without IndexedDB they only last for the session.
-// Record: { id, profile, created, updated, ops }
+// Free drawings and imported colouring pages, kept in IndexedDB: a few dozen of them would not fit
+// in localStorage. Without IndexedDB they only last for the session.
+// Drawing: { id, profile, created, updated, ops, base? }   Page (store 'pages'): { id, svg, added }
 
-const DB = 'giuno', STORE = 'art';
+const DB = 'giuno', STORE = 'art', PAGES = 'pages';
 const mem = new Map();
+const memPages = new Map();
 let opening = null;
 
 function open() {
   if (!opening) {
     opening = new Promise((resolve) => {
       try {
-        const q = indexedDB.open(DB, 1);
-        q.onupgradeneeded = () => q.result.createObjectStore(STORE, { keyPath: 'id' }).createIndex('profile', 'profile');
+        const q = indexedDB.open(DB, 2);
+        q.onupgradeneeded = () => {
+          const db = q.result;
+          if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' }).createIndex('profile', 'profile');
+          if (!db.objectStoreNames.contains(PAGES)) db.createObjectStore(PAGES, { keyPath: 'id' });
+        };
         q.onsuccess = () => {
           q.result.onversionchange = () => q.result.close();
           resolve(q.result);
@@ -26,12 +31,12 @@ function open() {
 }
 
 // Run one request in its own transaction; resolves once the transaction has committed.
-async function request(mode, make) {
+async function request(mode, make, store = STORE) {
   const db = await open();
   if (!db) return undefined;
   return new Promise((resolve, reject) => {
-    const t = db.transaction(STORE, mode);
-    const q = make(t.objectStore(STORE));
+    const t = db.transaction(store, mode);
+    const q = make(t.objectStore(store));
     t.oncomplete = () => resolve(q.result);
     t.onerror = t.onabort = () => reject(t.error);
   });
@@ -71,6 +76,26 @@ export async function allArt() {
 export async function clearArt() {
   if (!(await open())) { mem.clear(); return; }
   await request('readwrite', (s) => s.clear());
+}
+
+export async function allPages() {
+  if (!(await open())) return [...memPages.values()];
+  return request('readonly', (s) => s.getAll(), PAGES);
+}
+
+export async function putPage(record) {
+  if (!(await open())) { memPages.set(record.id, record); return; }
+  await request('readwrite', (s) => s.put(record), PAGES);
+}
+
+export async function deletePage(id) {
+  if (!(await open())) { memPages.delete(id); return; }
+  await request('readwrite', (s) => s.delete(id), PAGES);
+}
+
+export async function clearPages() {
+  if (!(await open())) { memPages.clear(); return; }
+  await request('readwrite', (s) => s.clear(), PAGES);
 }
 
 export async function deleteArtOf(profile) {

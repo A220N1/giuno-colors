@@ -2,14 +2,16 @@
 // one file, and put back from such a file, for instance on a new phone.
 import { $, confirmDialog } from './util.js';
 import { storageEntries, replaceStorage } from './store.js';
-import { allArt, clearArt, putArt } from './artstore.js';
+import { allArt, clearArt, putArt, allPages, clearPages, putPage } from './artstore.js';
 import { shareFile } from './share.js';
 import { t } from './i18n.js';
+import { importPage } from './importer.js';
+import { route } from './main.js';
 
 const APP = 'giuno-colors';
 
 export async function makeBackup() {
-  return { app: APP, version: 1, saved: new Date().toISOString(), storage: storageEntries(), art: await allArt() };
+  return { app: APP, version: 1, saved: new Date().toISOString(), storage: storageEntries(), art: await allArt(), pages: await allPages() };
 }
 
 export async function saveBackup() {
@@ -26,6 +28,10 @@ export async function restoreBackup(data) {
   replaceStorage(Object.fromEntries(Object.entries(data.storage).filter(([, v]) => typeof v === 'string')));
   await clearArt();
   for (const r of records) await putArt(r);
+  await clearPages();
+  for (const p of Array.isArray(data.pages) ? data.pages : []) {
+    if (p && typeof p.id === 'string' && typeof p.svg === 'string') await putPage(p);
+  }
   return true;
 }
 
@@ -43,6 +49,21 @@ async function pickAndRestore(file) {
 
 $('#backup-save').addEventListener('click', () => saveBackup().catch((e) => console.error('backup failed:', e)));
 $('#backup-load').addEventListener('click', () => $('#backup-file').click());
+$('#page-import').addEventListener('click', () => $('#page-file').click());
+$('#page-file').addEventListener('change', async (e) => {
+  const files = [...(e.target.files || [])];
+  e.target.value = '';
+  const added = [], refused = [];
+  for (const file of files) {
+    const d = await importPage(await file.text(), file.name).catch((err) => err);
+    if (d instanceof Error) refused.push(`${file.name} (${d.message})`); else added.push(d.title);
+  }
+  if (added.length) route();
+  const lines = [];
+  if (added.length) lines.push(t('Coloriage ajouté : {names}', { names: added.join(', ') }));
+  if (refused.length) lines.push(t("Pas un coloriage à numéros : {names}", { names: refused.join(', ') }));
+  if (lines.length) await confirmDialog(lines.join('\n'));
+});
 $('#backup-file').addEventListener('change', (e) => {
   const file = e.target.files && e.target.files[0];
   e.target.value = '';

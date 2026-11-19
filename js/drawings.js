@@ -27,6 +27,28 @@ function parseDrawing(entry) {
 
 export const drawings = DRAWINGS.map(parseDrawing).filter(Boolean);
 
+export const IMPORTED = 'Coloriages ajoutés', IMPORTED_EN = 'Added coloring pages';
+
+function fnv(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+// A colouring page imported on this phone, shown first in the gallery; null if it does not parse.
+export function addImported(page) {
+  const d = parseDrawing({ id: page.id, svg: page.svg, hash: fnv(page.svg), category: IMPORTED, category_en: IMPORTED_EN });
+  if (!d) return null;
+  d.imported = true;
+  drawings.splice(drawings.filter((x) => x.imported).length, 0, d);
+  return d;
+}
+
+export function removeImported(id) {
+  const i = drawings.findIndex((x) => x.imported && x.id === id);
+  if (i >= 0) drawings.splice(i, 1);
+}
+
 export function instantiate(d) {
   const g = svgEl('g', { class: 'art' });
   for (const child of d.root.childNodes) g.append(document.importNode(child, true));

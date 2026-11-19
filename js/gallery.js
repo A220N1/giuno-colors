@@ -1,5 +1,6 @@
 // The gallery for the current child: free drawings first, then the colouring pages with their progress.
-import { $, el, svgEl, showScreen, face } from './util.js';
+import { $, el, svgEl, showScreen, face, onLongPress, confirmDialog } from './util.js';
+import { forgetPage } from './importer.js';
 import { drawings, instantiate, paint } from './drawings.js';
 import { getProgress, storageOk } from './store.js';
 import { listArt, newArtId } from './artstore.js';
@@ -65,6 +66,13 @@ export function showGallery(profile, onOpen, onWho, onArt) {
     const card = el('button', 'card');
     card.append(thumb, meta, bar);
     card.addEventListener('click', () => onOpen(d));
+    if (d.imported) {
+      onLongPress(card, 600, async () => {
+        if (!(await confirmDialog(t('Retirer « {title} » de ce téléphone ?', { title: titleOf(d) }), t('Retirer')))) return;
+        await forgetPage(d.id);
+        showGallery(profile, onOpen, onWho, onArt);
+      });
+    }
     cards.append(card);
   }
   $('#storage-note').hidden = storageOk();

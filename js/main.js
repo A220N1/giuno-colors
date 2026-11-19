@@ -8,6 +8,7 @@ import { openPlay, leavePlay } from './play.js';
 import { openDraw, leaveDraw } from './draw.js';
 import { resetLock } from './lock.js';
 import './backup.js';
+import { loadImported } from './importer.js';
 import { newArtId } from './artstore.js';
 import { lang, setLanguage, translatePage } from './i18n.js';
 
@@ -96,4 +97,6 @@ $('#install').addEventListener('click', async () => {
 addEventListener('appinstalled', () => { $('#install').hidden = true; });
 
 translatePage();
+// the colouring pages imported on this phone join the gallery before it shows
+try { await loadImported(); } catch (e) { console.error('imported pages not loaded:', e); }
 route();

@@ -182,6 +182,7 @@ function updateLabelVisibility() {
 function buildPalette() {
   const pal = $('#palette');
   pal.replaceChildren();
+  pal.classList.toggle('many', P.d.palette.length > 12);  // one scrolling row instead of many rows
   P.left = P.d.palette.map(() => 0);
   const used = P.d.palette.map(() => 0);
   P.colors.forEach((c, i) => { used[c]++; if (!P.filled.has(i)) P.left[c]++; });
@@ -215,6 +216,9 @@ function nextColor(from) {
 function selectColor(ci) {
   P.sel = ci;
   P.swatches.forEach((b, j) => b.classList.toggle('sel', j === ci));
+  if (P.swatches[ci] && $('#palette').classList.contains('many')) {
+    try { P.swatches[ci].scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); } catch (e) { /* old browser */ }
+  }
   P.zones.forEach((z, i) => z.classList.toggle('hl', P.colors[i] === ci && !P.filled.has(i)));
   scheduleFindHint();
 }
