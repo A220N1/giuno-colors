@@ -243,6 +243,7 @@ run(async () => {
     let inked = 0;
     for (let x = 100; x <= 300; x++) for (let dy = -8; dy <= 8; dy += 4) if (pixel(im, x, 60 + 50 * i + dy) !== WHITE) inked++;
     check(op.t === 'line' && (op.k || 'marker') === k && inked > 40, `${k} draws (${inked} inked pixels)`);
+    if (k === 'bubbles') check(draw.debug.sparkles.floating() >= 2, `bubbles fly off the stroke (${draw.debug.sparkles.floating()})`);
   });
   pickBrush('pencil');
   drag(stage, ring(600, 600, 120));
