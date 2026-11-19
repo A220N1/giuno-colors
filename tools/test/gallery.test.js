@@ -113,4 +113,29 @@ run(async () => {
   check(JSON.parse(localStorage.getItem('giuno.profiles')).length === 3 && (await allArt()).length === 3
     && localStorage.getItem(`giuno.progress.p1.${first.key}`) === '[0,1,2]', 'restored as saved, nothing more');
   check(!(await backup.restoreBackup({ app: 'something else', storage: {}, art: [] })), 'a foreign file is refused');
+
+  // a colouring page added from a file: cleaned of anything that could run, shown first, saved, removed
+  const importer = await import('../js/importer.js');
+  const { route } = await import('../js/main.js');
+  const { allPages } = await import('../js/artstore.js');
+  const nasty = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" data-palette="#ff0000 #00ff00" onload="window.hacked=1">'
+    + '<script>window.hacked=2</script><rect data-c="1" width="50" height="100" onclick="window.hacked=3"/>'
+    + '<rect data-c="2" x="50" width="50" height="100" fill="url(javascript:window.hacked=4)"/>'
+    + '<foreignObject><div xmlns="http://www.w3.org/1999/xhtml">x</div></foreignObject></svg>';
+  const page = await importer.importPage(nasty, 'Essai.svg');
+  check(!(page instanceof Error) && page.title === 'Essai' && drawings[0] === page, 'page added first, named after its file');
+  const kept = new XMLSerializer().serializeToString(page.root);
+  check(!/script|onload|onclick|javascript|foreignObject/i.test(kept) && page.root.querySelectorAll('[data-c]').length === 2,
+    'only the shapes are kept');
+  check((await importer.importPage('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>', 'x.svg')) instanceof Error
+    && (await importer.importPage('not a drawing', 'y.svg')) instanceof Error, 'files that are not colouring pages are refused');
+  route();
+  await settle();
+  const heads = [...document.querySelectorAll('#cards .section')].map((h) => h.textContent);
+  check(heads[1] === 'Coloriages ajoutés' && document.querySelector('#cards .cards .card .meta b').textContent === 'Essai',
+    'the added page heads the gallery');
+  check(window.hacked === undefined, 'nothing from the file ran');
+  check((await backup.makeBackup()).pages.length === 1, 'the backup holds the added page');
+  await importer.forgetPage(page.id);
+  check(!drawings.includes(page) && (await allPages()).length === 0, 'the added page removed');
 });

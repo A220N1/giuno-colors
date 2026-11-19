@@ -14,7 +14,7 @@ Use it at https://a220n1.github.io/giuno-colors/ and add it to the home screen f
 - A blank page for free drawing, with eight kinds of brush (felt pen, pen, pencil, pastel, paintbrush, glitter, neon and a trail of hearts), a paint bucket for closed areas, an eraser, five shapes, 42 stickers (OpenMoji emojis and the profile animals), four line sizes, 16 colors and a pastel rainbow. A rainbow stroke changes hue along its length and leaves a trail of twinkling stars while it is drawn; the paint bucket and the shapes fill or outline in a rainbow gradient. A mirror repeats every stroke, shape, eraser stroke and fill on the other side of the page, in its four quarters, or six times round the middle like a kaleidoscope, with its axes shown as dashed lines. The page can be white or colored paper, a starry night sky, squared or dotted paper. Two fingers zoom in on the page. A replay button draws the picture again, stroke by stroke, in a few seconds. Undo and redo reach back to the first stroke, even after the drawing was closed. Each child's drawings come first in the gallery.
 - Any coloring page can also be painted freely with these tools: its outlines stay on top of the paint and hold the paint bucket.
 - A padlock on the coloring and drawing screens hides the buttons that leave the drawing and stops the phone's Back gesture from leaving it. Holding the padlock for a little over a second unlocks it. The app cannot block the home button: Android's app pinning does that.
-- Each child gets a profile with its own animal, progress and drawings. There are 15 animals to pick from. Progress, profiles and the language are kept in the browser's localStorage, drawings in its IndexedDB. The grown-ups' corner at the bottom of the gallery saves all of it in a JSON file and puts it back from such a file, for instance on a new phone.
+- Each child gets a profile with its own animal, progress and drawings. There are 15 animals to pick from. Progress, profiles and the language are kept in the browser's localStorage, drawings in its IndexedDB. The grown-ups' corner at the bottom of the gallery saves all of it in a JSON file and puts it back from such a file, for instance on a new phone. It can also add a color-by-number page from an SVG file in the format below: the page stays on that phone, first in the gallery, and only its shapes, groups, gradients and their drawing attributes are kept, so a file cannot run anything in the app. Holding its card removes it. With more than 12 colors, the palette scrolls on one row.
 - A drawing can be shared or saved as a PNG image.
 
 ## Build
@@ -54,6 +54,16 @@ python3 tools/patterns.py --out drawings [--only 70_mandala_fleuri ...]
 
 ```sh
 python3 tools/from_painting.py --sources <folder> --out drawings [--only 85_vague ...]
+```
+
+Two more scripts drive VectorCraft (the vector illustration app of the ArtCraft suite, through `vectorcraft-cli.exe` and its Image Trace, without a window) and need it besides Pillow:
+
+- `tools/from_trace.py` traces a flat-color illustration in a few colors, each traced shape becoming a zone. It suits pictures with clear flat areas and soft cel shading; photos, 3D renders and textured paintings give blotches.
+- `tools/from_lineart.py` takes a line drawing and a colored copy of it with the same framing: the areas closed by the lines become the zones, colored from the copy, and the lines, traced by VectorCraft, are laid over them.
+
+```sh
+python3 tools/from_trace.py --image <picture> --out <drawing.svg> --work <folder on a Windows drive> --vectorcraft <vectorcraft-cli.exe> --title <title>
+python3 tools/from_lineart.py --lines <lines.png> --colours <colored.png> --out <drawing.svg> --work <folder> --vectorcraft <vectorcraft-cli.exe> --title <title>
 ```
 
 These scripts write the same files on every run, so regenerating a drawing does not reset a child's progress unless its layout changed.

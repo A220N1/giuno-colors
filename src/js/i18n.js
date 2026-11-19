@@ -71,6 +71,13 @@ const EN = {
   'Remplacer les profils, la progression et les dessins de ce téléphone par la sauvegarde du {date} ?':
     'Replace the profiles, progress and drawings of this phone with the backup of {date}?',
   'Remplacer': 'Replace',
+  'Un coloriage à numéros au format SVG peut être ajouté depuis un fichier. Il reste sur ce téléphone. Appui long sur sa carte pour le retirer.':
+    'A color-by-number page in SVG format can be added from a file. It stays on this phone. Hold its card to remove it.',
+  'Ajouter un coloriage': 'Add a coloring page',
+  'Coloriage ajouté : {names}': 'Coloring page added: {names}',
+  'Pas un coloriage à numéros : {names}': 'Not a color-by-number page: {names}',
+  'Retirer « {title} » de ce téléphone ?': 'Remove "{title}" from this phone?',
+  'Retirer': 'Remove',
   'Peindre librement ce dessin': 'Paint this drawing freely',
   'Feutre': 'Felt pen',
   'Stylo': 'Pen',
