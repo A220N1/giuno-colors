@@ -1,6 +1,7 @@
 // Pictures drawn into free drawings: stickers (OpenMoji emojis and the profile animals) and the
 // outlines of a colouring page painted freely. Each loads once; a drawing waits for its own.
 import { drawings } from './drawings.js';
+import { NATURE_STAMPS, isNature } from './nature.js';
 
 const PAGE_W = 800, PAGE_H = 1000;
 const OUTLINE_PX = 2;  // pixels per page unit of a colouring page's outlines
@@ -11,9 +12,11 @@ export const EMOJI_STAMPS = [
 ];
 export const ANIMAL_STAMPS = ['fox', 'cat', 'rabbit', 'bear', 'owl', 'hedgehog', 'fawn', 'squirrel', 'mouse', 'frog',
   'red-panda', 'dog', 'seal', 'duck', 'lamb'];
-// Emojis are keyed 'e' + their code, animals by their name.
-export const STAMPS = [...EMOJI_STAMPS.map((c) => 'e' + c), ...ANIMAL_STAMPS];
-export const isAnimal = (k) => !k.startsWith('e');
+// Clouds and grass first (drawn as shapes, in the colour in use), then emojis keyed 'e' + their code,
+// then the animals by their name.
+export const STAMPS = [...NATURE_STAMPS, ...EMOJI_STAMPS.map((c) => 'e' + c), ...ANIMAL_STAMPS];
+export const isAnimal = (k) => ANIMAL_STAMPS.includes(k);
+export { isNature };
 export const stampUrl = (k) => (isAnimal(k) ? `avatars/${k}.svg` : `stamps/${k.slice(1)}.svg`);
 
 const stamps = new Map();
@@ -99,11 +102,11 @@ export function loadBase(id) {
 
 // Everything a saved drawing needs before it can be drawn: its stickers and its colouring page.
 export async function prepareArt(ops, baseId) {
-  const keys = new Set(ops.filter((op) => op.t === 'stamp').map((op) => op.k));
+  const keys = new Set(ops.filter((op) => op.t === 'stamp' && !isNature(op.k)).map((op) => op.k));
   await Promise.all([...keys].map((k) => loadStamp(k).ready));
   return loadBase(baseId);
 }
 
 export function preloadStamps() {
-  return Promise.all(STAMPS.map((k) => loadStamp(k).ready));
+  return Promise.all(STAMPS.filter((k) => !isNature(k)).map((k) => loadStamp(k).ready));
 }

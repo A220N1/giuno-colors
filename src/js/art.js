@@ -7,15 +7,18 @@
 //   { t: 'erase', w, p: [...] }                     eraser stroke, clears both layers
 //   { t: 'shape', k, c, w, b: [x, y, width, height] }
 //   { t: 'fill', c, r: [[x0, y0, x1, y1, ...], ...] } closed loops, even-odd rule
-//   { t: 'stamp', k, b: [x, y, width, height] }      sticker: 'e' + OpenMoji code, or a profile animal
+//   { t: 'stamp', k, b: [x, y, width, height], c? }  sticker: 'e' + OpenMoji code, a profile animal, or
+//                                                    a cloud or tuft of grass ('vcloud1'…) in colour c
 //   { t: 'bg', k: 'paper' | 'night' | 'grid' | 'dots', c }  page background, the last one counts
+//   { t: 'smudge', w, p: [...] }                    finger: spreads the paint of both layers along it
 // A line may carry k, its kind of brush (see brushes.js); without it, the felt pen.
 // The colour c is '#rrggbb' or 'rainbow': pastel hues turning along a stroke, or across a fill or shape.
 // Lines, eraser strokes and shapes may carry m (2, 4 or 6): drawn again as their mirror images around
 // the middle of the page. A fill with z uses the nonzero rule: its loops may come from several taps.
 
-import { RAINBOW, rainbowAt, HEART, linePath, drawStroke, wallWidth } from './brushes.js';
-import { stampImage, isAnimal } from './images.js';
+import { RAINBOW, rainbowAt, HEART, linePath, drawStroke, wallWidth, along } from './brushes.js';
+import { stampImage, isAnimal, isNature } from './images.js';
+import { drawNature } from './nature.js';
 
 export const PAGE_W = 800, PAGE_H = 1000;
 export const SIZES = [6, 14, 28, 52];
@@ -149,6 +152,7 @@ function drawLine(ctx, op, solid) {
 }
 
 function drawStamp(ctx, op) {
+  if (isNature(op.k)) { drawNature(ctx, op); return; }
   const img = stampImage(op.k);
   if (!img) return;
   const [x, y, w, h] = op.b;
@@ -217,6 +221,50 @@ export function drawBackground(ctx, bg, k) {
   }
 }
 
+// Finger: soft dabs along the stroke, each made of the paint a little behind it, laid at partial
+// opacity. Done on the layer's own pixels, whatever its scale, so it replays the same way.
+const SMUDGE_KEEP = 0.6;
+let dab = null;
+
+function smudgeLayer(ctx, op, from) {
+  if (op.p.length < 4) return from;  // a tap has no direction to spread the paint along
+  const t = ctx.getTransform(), scale = Math.hypot(t.a, t.b);
+  const R = Math.max(1, Math.round(op.w / 2 * scale)), size = 2 * R;
+  if (!dab) dab = document.createElement('canvas');
+  if (dab.width < size || dab.height < size) { dab.width = size; dab.height = size; }
+  const d = dab.getContext('2d');
+  const lag = Math.max(1.5, op.w * 0.3);
+  return along(op.p, Math.max(1, op.w * 0.12), from, (k, x, y, nx, ny) => {
+    // the paint comes from `lag` units back along the stroke (its direction is (ny, -nx))
+    const px = x - ny * lag, py = y + nx * lag;
+    const sx = t.a * px + t.c * py + t.e, sy = t.b * px + t.d * py + t.f;
+    const dx = t.a * x + t.c * y + t.e, dy = t.b * x + t.d * y + t.f;
+    d.globalCompositeOperation = 'copy';
+    d.drawImage(ctx.canvas, sx - R, sy - R, size, size, 0, 0, size, size);
+    d.globalCompositeOperation = 'destination-in';
+    const g = d.createRadialGradient(R, R, 0, R, R, R);
+    g.addColorStop(0, 'rgba(0,0,0,1)');
+    g.addColorStop(0.6, 'rgba(0,0,0,0.8)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    d.fillStyle = g;
+    d.fillRect(0, 0, size, size);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = SMUDGE_KEEP;
+    ctx.drawImage(dab, 0, 0, size, size, dx - R, dy - R, size, size);
+    ctx.restore();
+  });
+}
+
+// The finger's dabs from mark `from` on, on both layers (and their mirror images); the next mark.
+export function smudgeOp(fills, lines, op, from = 0) {
+  let next = from;
+  mirrored(op, [fills, lines], () => {
+    for (const ctx of [fills, lines]) if (ctx) next = smudgeLayer(ctx, op, from);
+  });
+  return next;
+}
+
 // The outlines of a colouring page painted freely, above everything else.
 export function drawBase(ctx, base, k) {
   clearCanvas(ctx, k);
@@ -246,6 +294,8 @@ export function drawOp(fills, lines, op, solid = false) {
     });
   } else if (op.t === 'bg') {
     // drawn on its own layer, see drawBackground
+  } else if (op.t === 'smudge') {
+    if (!solid) smudgeOp(fills, lines, op);  // the paint bucket does not see it
   } else if (lines) {
     mirrored(op, [lines], () => {
       if (op.t === 'shape') drawShape(lines, op, pathOf(op));

@@ -251,7 +251,7 @@ run(async () => {
 
   // stickers: a tap drops one of the chosen size, a drag sizes it
   pickTool('stamp');
-  check($('#draw-pop').querySelectorAll('[data-stamp]').length === 42, 'sticker menu: 27 emojis and 15 animals');
+  check($('#draw-pop').querySelectorAll('[data-stamp]').length === 48, 'sticker menu: 6 clouds and grass, 27 emojis, 15 animals');
   $('#draw-pop [data-stamp="e2764"]').click();
   tap(stage, ...at(400, 860));
   const st = K.ops[K.ops.length - 1];
@@ -261,6 +261,31 @@ run(async () => {
   $('#draw-pop [data-stamp="fox"]').click();
   drag(stage, segment(80, 720, 230, 840, 10));
   check(K.ops[K.ops.length - 1].b[2] === 150, 'a drag sizes the sticker');
+  pickColor(RED);
+  pickTool('stamp');
+  $('#draw-pop [data-stamp="vcloud1"]').click();
+  tap(stage, ...at(600, 160));
+  const cl = K.ops[K.ops.length - 1];
+  img = flat();
+  check(cl.k === 'vcloud1' && cl.c === RED && pixel(img, 600, 160) === RED, 'a cloud sticker in the colour in use');
+
+  // the finger spreads the paint: red pushed out of a thick line into the white beside it, undone, redone
+  pickBrush('marker');
+  $('#size').click();
+  $('#draw-pop [data-size="3"]').click();
+  drag(stage, segment(250, 300, 250, 700, 20));
+  check(pixel(flat(), 330, 500) === WHITE, 'white beside the red line');
+  pickTool('smudge');
+  $('#size').click();
+  $('#draw-pop [data-size="2"]').click();
+  drag(stage, segment(240, 500, 420, 500, 30));
+  const sm = K.ops[K.ops.length - 1];
+  const reddish = (c) => c !== WHITE && parseInt(c.slice(1, 3), 16) > parseInt(c.slice(5, 7), 16) + 20;
+  check(sm.t === 'smudge' && reddish(pixel(flat(), 330, 500)), `the finger spreads the red (${pixel(flat(), 330, 500)})`);
+  $('#undo').click();
+  check(pixel(flat(), 330, 500) === WHITE, 'undo takes the smudge back');
+  $('#redo').click();
+  check(reddish(pixel(flat(), 330, 500)), 'redo spreads it again');
 
   // background: the night sky, undone
   $('#draw-bg').click();
