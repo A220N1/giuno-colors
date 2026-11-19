@@ -8,18 +8,20 @@ export const RAINBOW_LEN = 600;  // page units of stroke for one full turn of th
 export const rainbowAt = (turn) => `hsl(${Math.round((((turn % 1) + 1) % 1) * 360)}, 88%, 76%)`;
 export const HEART = 'M.5 .24C.42 .06 .27 0 .18 0 .07 0 0 .1 0 .26 0 .52 .26 .74 .5 1 .74 .74 1 .52 1 .26 1 .1 .93 0 .82 0 .73 0 .58 .06 .5 .24Z';
 
-export const BRUSHES = ['marker', 'pen', 'pencil', 'pastel', 'paint', 'glitter', 'neon', 'hearts', 'grass', 'clouds'];
+export const BRUSHES = ['marker', 'pen', 'pencil', 'pastel', 'paint', 'glitter', 'neon', 'hearts', 'stars', 'bubbles', 'drip', 'grass', 'clouds'];
 export const BRUSH_NAMES = {
   marker: 'Feutre', pen: 'Stylo', pencil: 'Crayon', pastel: 'Pastel', paint: 'Pinceau',
-  glitter: 'Paillettes', neon: 'Néon', hearts: 'Cœurs', grass: 'Herbe', clouds: 'Nuages',
+  glitter: 'Paillettes', neon: 'Néon', hearts: 'Cœurs', stars: 'Étoiles filantes', bubbles: 'Bulles', drip: 'Peinture qui coule',
+  grass: 'Herbe', clouds: 'Nuages',
 };
 // Kinds drawn mark by mark: while drawing, only the new marks are added to the screen.
-export const PIECEWISE = new Set(['pencil', 'pastel', 'paint', 'hearts', 'grass', 'clouds']);
+export const PIECEWISE = new Set(['pencil', 'pastel', 'paint', 'hearts', 'stars', 'bubbles', 'grass', 'clouds']);
 
 // Width of the line a stroke makes for the paint bucket, which needs it whole.
 export function wallWidth(op) {
   const k = op.k || 'marker';
-  return op.w * (k === 'pen' ? 0.4 : k === 'pastel' ? 1.15 : k === 'neon' ? 0.7 : k === 'clouds' ? 1.3 : k === 'grass' ? 0.6 : 1);
+  return op.w * (k === 'pen' ? 0.4 : k === 'pastel' ? 1.15 : k === 'neon' ? 0.7 : k === 'clouds' ? 1.3 : k === 'grass' ? 0.6
+    : k === 'stars' ? 0.3 : k === 'bubbles' ? 0.6 : 1);
 }
 
 // ---- colours
@@ -296,6 +298,86 @@ function glitter(ctx, op, from) {
   return next;
 }
 
+// Shooting stars: a trail of fine dust, with stars of all sizes scattered along it, each with a glint.
+function stars(ctx, op, from) {
+  const seed = seedOf(op), colour = colourOf(op), pt = painter(ctx), w = op.w;
+  const spacing = Math.max(1.5, w * 0.12);
+  const every = Math.max(2, Math.round(w * 1.1 / spacing));  // dust marks between two stars
+  const next = along(op.p, spacing, from, (k, x, y, nx, ny, len) => {
+    const rgb = colour(len);
+    const off = (rnd(seed, k, 0) - 0.5) * w * 0.3, d = Math.max(0.7, w * 0.06);
+    const dust = pt.path(css(rgb, 0.3, 0.6));
+    dust.moveTo(x + nx * off + d, y + ny * off);
+    dust.arc(x + nx * off, y + ny * off, d, 0, Math.PI * 2);
+    if (k % every) return;
+    const R = Math.max(4, w * (0.38 + 0.7 * rnd(seed, k, 1) ** 1.5)), r = R * 0.45;
+    const o = (rnd(seed, k, 2) - 0.5) * w * 1.7, cx = x + nx * o, cy = y + ny * o, rot = rnd(seed, k, 3) * Math.PI;
+    const star = pt.path(css(rgb, 0.08));
+    for (let i = 0; i < 10; i++) {
+      const a = rot + i * Math.PI / 5, q = i % 2 ? r : R;
+      if (i) star.lineTo(cx + q * Math.sin(a), cy - q * Math.cos(a)); else star.moveTo(cx + q * Math.sin(a), cy - q * Math.cos(a));
+    }
+    star.closePath();
+    const glint = pt.path('rgba(255,255,255,0.9)');
+    glint.moveTo(cx + R * 0.16, cy);
+    glint.arc(cx, cy, R * 0.16, 0, Math.PI * 2);
+  });
+  pt.flush();
+  return next;
+}
+
+// Soap bubbles: clear in the middle, tinted towards the edge, an iridescent rim and a shine.
+const IRIDESCENT = [[255, 182, 214], [255, 241, 168], [168, 236, 255], [214, 190, 255]];
+function bubbles(ctx, op, from) {
+  const seed = seedOf(op), colour = colourOf(op), w = op.w;
+  return along(op.p, Math.max(4, w * 0.75), from, (k, x, y, nx, ny, len) => {
+    const rgb = colour(len);
+    const r = Math.max(3, w * (0.28 + 0.62 * rnd(seed, k, 0) ** 1.6));
+    const off = (rnd(seed, k, 1) - 0.5) * w * 1.1, cx = x + nx * off, cy = y + ny * off;
+    const body = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r);
+    body.addColorStop(0, 'rgba(255,255,255,0.04)');
+    body.addColorStop(0.7, css(rgb, 0.5, 0.16));
+    body.addColorStop(1, css(rgb, 0.25, 0.45));
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    const start = rnd(seed, k, 2) * Math.PI * 2;
+    let rim;
+    if (ctx.createConicGradient) {
+      rim = ctx.createConicGradient(start, cx, cy);
+      [rgb, ...IRIDESCENT, rgb].forEach((c, i, all) => rim.addColorStop(i / (all.length - 1), css(c, 0, 0.85)));
+    } else {
+      rim = css(rgb, 0.2, 0.8);
+    }
+    ctx.strokeStyle = rim;
+    ctx.lineWidth = Math.max(0.8, r * 0.08);
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = Math.max(0.8, r * 0.12);
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.68, Math.PI * 1.08, Math.PI * 1.38); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.beginPath(); ctx.arc(cx + r * 0.38, cy + r * 0.36, Math.max(0.6, r * 0.07), 0, Math.PI * 2); ctx.fill();
+  });
+}
+
+// Paint running down from a felt-pen line: drops at places along it, straight down the page, each
+// `grow` of its full length (the drops run for a moment after the stroke is drawn).
+export function drips(ctx, op, grow = 1) {
+  const seed = seedOf(op), colour = colourOf(op), w = op.w;
+  along(op.p, Math.max(4, w * 0.8), 0, (k, x, y, nx, ny, len) => {
+    if (rnd(seed, k, 0) > 0.4) return;
+    const hw = Math.max(1, w * (0.13 + 0.12 * rnd(seed, k, 1)));
+    const x0 = x + (rnd(seed, k, 2) - 0.5) * w * 0.4, y1 = y + w * 0.25 + w * (0.6 + 3 * rnd(seed, k, 3) ** 2) * grow;
+    ctx.fillStyle = css(colour(len));
+    ctx.beginPath();
+    ctx.moveTo(x0 - hw, y);
+    ctx.lineTo(x0 - hw * 0.85, y1);
+    ctx.arc(x0, y1, hw * 1.2, Math.PI, 0, true);
+    ctx.lineTo(x0 + hw, y);
+    ctx.fill();
+  });
+}
+
 function neon(ctx, op) {
   const t = ctx.getTransform(), scale = Math.hypot(t.a, t.b);
   ctx.save();
@@ -307,7 +389,8 @@ function neon(ctx, op) {
 }
 
 // Draw a line operation, or for a piecewise kind its marks from `from` on; returns the next mark.
-export function drawStroke(ctx, op, from = 0) {
+// `grow` is how far dripping paint has run (0 to 1).
+export function drawStroke(ctx, op, from = 0, grow = 1) {
   switch (op.k || 'marker') {
     case 'pen': strokeLine(ctx, op, Math.max(2, op.w * 0.4), (c, rgb) => { c.strokeStyle = css(rgb, -0.08); }); return 0;
     case 'pencil': return grain(ctx, op, from, { density: 1.2, spread: 0.5, size: [0.6, 0.9], alpha: [0.35, 0.55, 0.8] });
@@ -316,6 +399,9 @@ export function drawStroke(ctx, op, from = 0) {
     case 'glitter': return glitter(ctx, op, from);
     case 'neon': neon(ctx, op); return 0;
     case 'hearts': return hearts(ctx, op, from);
+    case 'stars': return stars(ctx, op, from);
+    case 'bubbles': return bubbles(ctx, op, from);
+    case 'drip': strokeLine(ctx, op, op.w, (c, rgb) => { c.strokeStyle = css(rgb); }); drips(ctx, op, grow); return 0;
     case 'grass': return grass(ctx, op, from);
     case 'clouds': return clouds(ctx, op, from);
     default: strokeLine(ctx, op, op.w, (c, rgb) => { c.strokeStyle = css(rgb); }); return 0;

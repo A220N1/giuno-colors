@@ -252,7 +252,7 @@ run(async () => {
 
   // stickers: a tap drops one of the chosen size, a drag sizes it
   pickTool('stamp');
-  check($('#draw-pop').querySelectorAll('[data-stamp]').length === 48, 'sticker menu: 6 clouds and grass, 27 emojis, 15 animals');
+  check($('#draw-pop').querySelectorAll('[data-stamp]').length === 50, 'sticker menu: 6 clouds and grass, 2 fireworks, 27 emojis, 15 animals');
   $('#draw-pop [data-stamp="e2764"]').click();
   tap(stage, ...at(400, 860));
   const st = K.ops[K.ops.length - 1];
@@ -269,6 +269,24 @@ run(async () => {
   const cl = K.ops[K.ops.length - 1];
   img = flat();
   check(cl.k === 'vcloud1' && cl.c === RED && pixel(img, 600, 160) === RED, 'a cloud sticker in the colour in use');
+  // a firework bursts over the page and leaves its sparks
+  pickTool('stamp');
+  $('#draw-pop [data-stamp="fwork1"]').click();
+  tap(stage, ...at(620, 420));
+  const fw = K.ops[K.ops.length - 1];
+  check(fw.k === 'fwork1' && fw.c === RED && draw.debug.sparkles.busy(), 'a firework sticker bursts');
+  img = flat();
+  let sparks = 0;
+  for (let x = fw.b[0]; x < fw.b[0] + fw.b[2]; x += 2) for (let y = fw.b[1]; y < fw.b[1] + fw.b[3]; y += 2) if (pixel(img, x, y) !== WHITE) sparks++;
+  check(sparks > 30, `the firework leaves its sparks (${sparks})`);
+  // a shake lets glitter fall in the colour in use; it settles as one operation, undone at once
+  const opsBefore = K.ops.length;
+  draw.debug.shake();
+  await waitFor(() => K.ops.length === opsBefore + 1, 'the glitter settles', 4000);
+  const fl = K.ops[K.ops.length - 1];
+  check(fl.t === 'flakes' && fl.k === 'glitter' && fl.c === RED && fl.n === 70, 'a shake leaves glitter');
+  $('#undo').click();
+  check(K.ops.length === opsBefore, 'the glitter is undone');
 
   // the finger spreads the paint: red pushed out of a thick line into the white beside it, undone, redone
   // (the finger is switched off while it is made faster: then its drawing is left out)

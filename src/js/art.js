@@ -11,14 +11,15 @@
 //                                                    a cloud or tuft of grass ('vcloud1'…) in colour c
 //   { t: 'bg', k, c? }                              page background (see backgrounds.js), the last one counts
 //   { t: 'smudge', w, p: [...] }                    finger: spreads the paint of both layers along it
+//   { t: 'flakes', k: 'snow' | 'glitter', c, s, n }  n flakes over the page from a shake, placed from seed s
 // A line may carry k, its kind of brush (see brushes.js); without it, the felt pen.
 // The colour c is '#rrggbb' or 'rainbow': pastel hues turning along a stroke, or across a fill or shape.
 // Lines, eraser strokes and shapes may carry m (2, 4 or 6): drawn again as their mirror images around
 // the middle of the page. A fill with z uses the nonzero rule: its loops may come from several taps.
 
-import { RAINBOW, rainbowAt, HEART, linePath, drawStroke, wallWidth, along } from './brushes.js';
+import { RAINBOW, rainbowAt, HEART, linePath, drawStroke, wallWidth, along, drips } from './brushes.js';
 import { stampImage, isAnimal, isNature } from './images.js';
-import { drawNature } from './nature.js';
+import { drawNature, drawFlakes } from './nature.js';
 import { backgroundOf, paintBackground } from './backgrounds.js';
 
 export const PAGE_W = 800, PAGE_H = 1000;
@@ -296,6 +297,8 @@ export function drawOp(fills, lines, op, solid = false) {
     // drawn on its own layer, see drawBackground
   } else if (op.t === 'smudge') {
     if (!solid) smudgeOp(fills, lines, op);  // the paint bucket does not see it
+  } else if (op.t === 'flakes') {
+    if (lines && !solid) drawFlakes(lines, op);  // nor the snow
   } else if (lines) {
     mirrored(op, [lines], () => {
       if (op.t === 'shape') drawShape(lines, op, pathOf(op));
@@ -303,6 +306,12 @@ export function drawOp(fills, lines, op, solid = false) {
       else drawLine(lines, op, solid);
     });
   }
+}
+
+// Dripping paint just drawn: the line with its drops `grow` of their length, then the drops alone as
+// they run further down (each step paints over the last).
+export function drawDripping(lines, op, grow, dropsOnly = false) {
+  mirrored(op, [lines], () => { if (dropsOnly) drips(lines, op, grow); else drawStroke(lines, op, 0, grow); });
 }
 
 // An operation still being drawn, on the layer above both: the eraser shows as white paper.

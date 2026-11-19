@@ -1,11 +1,13 @@
 // The free drawing screen: a blank page with brush, paint bucket, eraser, shapes, undo and redo.
 import { $, el, showScreen, vibrate, inkFor, confirmDialog } from './util.js';
 import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, MIRRORS, BRUSHES, BRUSH_NAMES, PIECEWISE, BACKGROUNDS, BG_NAMES, BG_CLOSE_UP,
-  backgroundOf, sameBackground, paperColor, drawBackground, drawBase, mirrorPoints, smudgeOp, drawOp, drawPreview, renderLayers, renderFlat, clearCanvas, fillRegion } from './art.js';
+  backgroundOf, sameBackground, paperColor, drawBackground, drawBase, mirrorPoints, smudgeOp, drawOp, drawPreview, drawDripping, renderLayers, renderFlat,
+  clearCanvas, fillRegion } from './art.js';
 import { getArt, putArt, deleteArt } from './artstore.js';
 import { sharePng, canvasPng } from './share.js';
 import { sparkler } from './sparkles.js';
 import { STAMPS, stampUrl, isAnimal, isNature, prepareArt, preloadStamps } from './images.js';
+import { isFirework, flakesOf } from './nature.js';
 import { t } from './i18n.js';
 
 const TAP_SLOP_PX = 10;     // finger movement still counted as a tap
@@ -15,6 +17,11 @@ const SHAPE_TAP_SIZE = 180; // a tap with the shape tool drops a shape this big
 const SAVE_DELAY_MS = 400;
 const SHAPE_NAMES = { circle: 'Rond', square: 'Carré', triangle: 'Triangle', star: 'Étoile', heart: 'Cœur' };
 const SPARKLE_EVERY_PX = 9;  // finger travel between two stars of a rainbow stroke
+const STAR_HUE = 0.13;      // the gold of the stars a shooting-star stroke throws in a plain colour
+const DRIP_MS = 1300;       // how long dripping paint keeps running after the stroke
+const SHAKE_ACCEL = 14;     // m/s² on top of gravity: a real shake, not a phone picked up
+const SHAKE_GAP_MS = 1500;  // one snowfall per shake
+const FLAKES = 70;          // flakes a shake lets fall
 const MIRROR_NAMES = { 1: 'Sans miroir', 2: 'Miroir gauche-droite', 4: 'Miroir en quatre', 6: 'Kaléidoscope' };
 const BAR_PX = [1.5, 2.5, 4, 5.5, 7.5];  // the sizes as bars on the thickness button
 const STAMP_SIZES = [80, 130, 190, 260, 340];  // side of a sticker dropped by a tap, by size
@@ -116,6 +123,7 @@ function applyView() {
 const scale = () => A.s * A.view.z;
 
 function renderAll() {
+  stopDrips();  // everything is drawn whole below, drops at full length
   const bg = backgroundOf(A.ops);
   A.paper = paperColor(bg);
   drawBackground(back, bg, A.k);
@@ -300,6 +308,72 @@ function addPoint(x, y) {
 }
 
 const isRainbow = (op) => op && op.c === RAINBOW;
+// Strokes that throw stars while drawn, and the hue of their stars at a length along them.
+const throwsStars = (op) => op && (op.c === RAINBOW || op.k === 'stars');
+const starHue = (op, len) => (op.c === RAINBOW ? len / RAINBOW_LEN : STAR_HUE);
+
+// Dripping paint runs down for a moment after the stroke, each frame painting longer drops.
+const dripping = new Set();
+function runDrips(op) {
+  const a = A, t0 = performance.now(), run = { raf: 0 };
+  const step = (now) => {
+    if (A !== a || !dripping.has(run)) return;
+    const t = Math.min(1, (now - t0) / DRIP_MS);
+    drawDripping(lines, op, 1 - (1 - t) ** 2, true);
+    if (t < 1) run.raf = requestAnimationFrame(step); else dripping.delete(run);
+  };
+  dripping.add(run);
+  run.raf = requestAnimationFrame(step);
+}
+function stopDrips() {
+  for (const run of dripping) cancelAnimationFrame(run.raf);
+  dripping.clear();
+}
+
+// The burst of a firework sticker over the page, and over its mirror images.
+function fireworkBurst(op) {
+  const [x, y, w] = op.b;
+  const colours = op.c === RAINBOW ? [0, 50, 120, 190, 260, 320].map((h) => `hsl(${h}, 90%, 70%)`)
+    : [op.c === '#ffffff' ? '#ffe28a' : op.c, '#fff3b0', '#ffffff'];
+  for (const [px, py] of copiesOf(x + w / 2, y + w / 2)) {
+    sparkles.firework(A.view.ox + px * scale(), A.view.oy + py * scale(), w * 0.62 * scale(), colours);
+  }
+}
+
+// A shake lets snow (in white) or glitter (in the colour in use) fall over the page; it stays there.
+function shake() {
+  if (!A || A.loading || A.replay) return;
+  const a = A;
+  const op = { t: 'flakes', k: tool.color === '#ffffff' ? 'snow' : 'glitter', c: tool.color, s: Math.floor(Math.random() * 1e9), n: FLAKES };
+  vibrate(30);
+  sparkles.rain(flakesOf(op), (x, y) => (A === a ? [a.view.ox + x * scale(), a.view.oy + y * scale()] : [-99, -99]),
+    () => (A === a ? scale() : 1), () => { if (A === a && !a.loading) commit(op); });
+}
+
+let lastShake = 0;
+addEventListener('devicemotion', (e) => {
+  if (!A) return;
+  let m;
+  const a = e.acceleration;
+  if (a && a.x != null) m = Math.hypot(a.x, a.y, a.z);
+  else {
+    const g = e.accelerationIncludingGravity;
+    if (!g || g.x == null) return;
+    m = Math.abs(Math.hypot(g.x, g.y, g.z) - 9.81);
+  }
+  const now = performance.now();
+  if (m < SHAKE_ACCEL || now - lastShake < SHAKE_GAP_MS) return;
+  lastShake = now;
+  shake();
+});
+
+// iPhones only report motion once asked, from a touch.
+let motionAsked = false;
+function askMotion() {
+  motionAsked = true;
+  const D = window.DeviceMotionEvent;
+  if (D && typeof D.requestPermission === 'function') D.requestPermission().catch(() => {});
+}
 
 // A new operation takes the mirror mode in use.
 function mirrorable(op) {
@@ -321,6 +395,7 @@ function sparkleAt(x, y, turn, n = 1, spread = 0) {
 
 stage.addEventListener('pointerdown', (e) => {
   if (!A || A.loading || e.target.closest('.pop, #zoom-fit')) return;
+  if (!motionAsked) askMotion();
   const r = stage.getBoundingClientRect();
   A.left = r.left; A.top = r.top;
   fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -339,7 +414,7 @@ stage.addEventListener('pointerdown', (e) => {
   }
   else if (tool.kind === 'eraser') pen.op = mirrorable({ t: 'erase', w, p: start });
   else if (tool.kind === 'smudge') pen.op = mirrorable({ t: 'smudge', w, p: start });
-  if (isRainbow(pen.op)) sparkleAt(x, y, 0, 3);
+  if (throwsStars(pen.op)) sparkleAt(x, y, starHue(pen.op, 0), 3);
   pen.from = 0;
   clearCanvas(live, A.k);
   showLive();
@@ -354,9 +429,9 @@ stage.addEventListener('pointermove', (e) => {
   if (pen.op && pen.op.p) {
     const all = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
     for (const ev of all.length ? all : [e]) addPoint(...toPage(ev));
-    if (isRainbow(pen.op)) {
+    if (throwsStars(pen.op)) {
       pen.spark += Math.hypot(e.clientX - pen.lx, e.clientY - pen.ly);
-      for (; pen.spark >= SPARKLE_EVERY_PX; pen.spark -= SPARKLE_EVERY_PX) sparkleAt(pen.sx, pen.sy, pen.len / RAINBOW_LEN);
+      for (; pen.spark >= SPARKLE_EVERY_PX; pen.spark -= SPARKLE_EVERY_PX) sparkleAt(pen.sx, pen.sy, starHue(pen.op, pen.len));
     }
     pen.lx = e.clientX; pen.ly = e.clientY;
   } else if (tool.kind === 'shape' && pen.moved) {
@@ -381,14 +456,18 @@ function penUp(e) {
   if (g.op && g.op.p) {
     const p = g.op.p, qx = Math.round(x), qy = Math.round(y);
     if (g.moved && (qx !== p[p.length - 2] || qy !== p[p.length - 1])) p.push(qx, qy);  // end where the finger left
-    if (g.op.t === 'smudge') { smudgeOp(fills, lines, g.op, g.from); commit(g.op, true); } else commit(g.op);
+    if (g.op.t === 'smudge') { smudgeOp(fills, lines, g.op, g.from); commit(g.op, true); }
+    else if (g.op.k === 'drip') { drawDripping(lines, g.op, 0); commit(g.op, true); runDrips(g.op); }
+    else commit(g.op);
   } else if (e.type !== 'pointerup') {
     return;
   } else if (tool.kind === 'stamp') {
     const h = STAMP_SIZES[tool.size] / 2;
     const b = (g.moved && stampBox(g.x, g.y, x, y)) || boxOf(g.x - h, g.y - h, g.x + h, g.y + h);
-    commit(mirrorable(stampOp(b)));
+    const op = mirrorable(stampOp(b));
+    commit(op);
     vibrate(12);
+    if (isFirework(op.k)) fireworkBurst(op);
   } else if (tool.kind === 'shape') {
     const h = SHAPE_TAP_SIZE / 2;
     const b = g.moved ? boxOf(g.x, g.y, x, y) : boxOf(g.x - h, g.y - h, g.x + h, g.y + h);
@@ -716,6 +795,7 @@ export const debug = {
   sparkles,
   replay,
   stopReplay,
+  shake,
 };
 
 preloadStamps();
