@@ -86,7 +86,7 @@ export async function run(test) {
   try {
     await test();
   } catch (e) {
-    failures.push('exception: ' + (e && e.stack || e));
+    failures.push('exception: ' + (e && e.message) + '\n' + (e && e.stack || e));
   }
   await sleep(500);  // let transitions end before the screenshot
   report();

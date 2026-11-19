@@ -1,6 +1,7 @@
-// "Qui colorie ?": one profile per child, each with its own progress.
+// "Qui colorie ?": one profile per child, each with its own progress and drawings.
 import { $, el, showScreen, face, onLongPress, confirmDialog } from './util.js';
 import { profiles, addProfile, updateProfile, removeProfile } from './store.js';
+import { deleteArtOf } from './artstore.js';
 
 const COLORS = ['#e8483b', '#fb8c00', '#f2b531', '#43a047', '#3088c4', '#7e57c2', '#ec6fa5', '#6d4c41'];
 
@@ -57,7 +58,10 @@ function editProfile(p, done) {
   };
   $('#profile-delete').onclick = async () => {
     close();
-    if (await confirmDialog(`Supprimer le profil de ${p.name} et toute sa progression ?`, 'Supprimer')) removeProfile(p.id);
+    if (await confirmDialog(`Supprimer le profil de ${p.name}, sa progression et ses dessins ?`, 'Supprimer')) {
+      removeProfile(p.id);
+      deleteArtOf(p.id).catch((e) => console.error('drawings not deleted:', e));
+    }
     done(null);
   };
 }

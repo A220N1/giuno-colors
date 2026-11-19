@@ -2,7 +2,7 @@
 
 # Giuno Colors
 
-Color by number for children. It is a web app that installs on a phone like any other app and keeps working offline. The interface is in French.
+Color by number for children, and a blank page to draw on. It is a web app that installs on a phone like any other app and keeps working offline. The interface is in French.
 
 Use it at https://a220n1.github.io/giuno-colors/ and add it to the home screen from the browser menu.
 
@@ -11,7 +11,8 @@ Use it at https://a220n1.github.io/giuno-colors/ and add it to the home screen f
 - 18 drawings in six categories, from 12 zones for a young child to about 70 for the large scenes.
 - Pick a color, then tap the zones that carry its number. Holding a zone picks its color.
 - Pinch to zoom and drag to move. Numbers too small to read appear as you zoom in, and the magnifier jumps to a zone that is left.
-- Each child gets a profile with its own progress.
+- A blank page for free drawing, with a brush, a paint bucket for closed areas, an eraser, five shapes, four line sizes and 16 colors. Undo and redo reach back to the first stroke, even after the drawing was closed. Each child's drawings come first in the gallery.
+- Each child gets a profile with its own progress and drawings. Progress is kept in the browser's localStorage, drawings in its IndexedDB.
 - A drawing can be shared or saved as a PNG image.
 
 ## Build
@@ -45,7 +46,7 @@ python3 tools/scenes.py --sources <folder> --out drawings
 
 ## Tests
 
-`tools/test/run.py` builds the site, serves it on a local port and opens it in headless Firefox once per test case. The colouring cases fill every drawing with simulated taps at three window sizes; the gallery case starts with two profiles and some saved progress. Each case writes a screenshot and a log. The tests need Python 3 and Firefox.
+`tools/test/run.py` builds the site, serves it on a local port and opens it in headless Firefox once per test case. The colouring cases fill every drawing with simulated taps, and the drawing cases use every tool, save, reopen and delete a drawing, each at three window sizes. The gallery case starts with two profiles, saved progress and saved drawings. Each case writes a screenshot and a log. The tests need Python 3 and Firefox.
 
 ```sh
 python3 tools/test/run.py --firefox <firefox executable> --profile <folder> --out <empty folder>

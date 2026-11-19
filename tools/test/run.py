@@ -18,6 +18,9 @@ CASES = [
     ("play-412x860", "play", (412, 860)),
     ("play-860x412", "play", (860, 412)),
     ("gallery", "gallery", (412, 860)),
+    ("draw-412x860", "draw", (412, 860)),
+    ("draw-412x700", "draw", (412, 700)),
+    ("draw-860x412", "draw", (860, 412)),
 ]
 
 PREFS = """\
@@ -89,6 +92,17 @@ def host_path(path, firefox):
     return str(path)
 
 
+def stop_leftovers(args):
+    """Stop any Firefox still running on the test profile; killing the WSL side of firefox.exe leaves it running."""
+    if not (args.firefox.suffix.lower() == ".exe" and shutil.which("powershell.exe")):
+        return
+    profile = host_path(args.profile, args.firefox).replace("'", "''")
+    script = ("Get-CimInstance Win32_Process -Filter \"name='firefox.exe'\" | "
+              f"Where-Object {{ $_.CommandLine -like '*--profile {profile} *' }} | "
+              "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
+    subprocess.run(["powershell.exe", "-NoProfile", "-Command", script], capture_output=True)
+
+
 def prepare_profile(profile):
     profile.mkdir(parents=True, exist_ok=True)
     mark = profile / PROFILE_MARK
@@ -123,6 +137,7 @@ def run_case(name, module, size, args, results, out):
         output, _ = proc.communicate(timeout=args.timeout + 30)
     except subprocess.TimeoutExpired:
         proc.kill()
+        stop_leftovers(args)
         output, _ = proc.communicate()
     (out / f"{name}.log").write_text(output)
     data = results.data
@@ -165,6 +180,7 @@ def main():
         sys.exit(f"error: {args.out} is not empty")
     args.out.mkdir(parents=True, exist_ok=True)
     prepare_profile(args.profile)
+    stop_leftovers(args)
 
     site = args.out / "site"
     subprocess.run([sys.executable, str(ROOT / "build.py"), "--out", str(site)], check=True, stdout=subprocess.DEVNULL)
