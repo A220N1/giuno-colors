@@ -1,4 +1,5 @@
 // A drawing as a PNG image, shared through the phone's share sheet or saved as a download.
+import { titleOf } from './i18n.js';
 
 // Standalone SVG of the drawing as coloured so far: filled zones in their colour, the others white.
 export function snapshotSvg(d, filled, width) {
@@ -40,7 +41,7 @@ export function canvasPng(canvas) {
 }
 
 export async function shareDrawing(d, filled) {
-  return sharePng(await renderPng(d, filled, 1200), `giuno-${d.id}.png`, d.title);
+  return sharePng(await renderPng(d, filled, 1200), `giuno-${d.id}.png`, titleOf(d));
 }
 
 export async function sharePng(blob, name, title) {

@@ -1,8 +1,10 @@
 // The free drawing screen: a blank page with brush, paint bucket, eraser, shapes, undo and redo.
 import { $, el, showScreen, vibrate, inkFor, confirmDialog } from './util.js';
-import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, drawOp, drawPreview, renderLayers, renderFlat, clearCanvas, fillRegion } from './art.js';
+import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, drawOp, drawPreview, renderLayers, renderFlat, clearCanvas, fillRegion } from './art.js';
 import { getArt, putArt, deleteArt } from './artstore.js';
 import { sharePng, canvasPng } from './share.js';
+import { sparkler } from './sparkles.js';
+import { t } from './i18n.js';
 
 const TAP_SLOP_PX = 10;     // finger movement still counted as a tap
 const MIN_STEP = 2;         // page units between two kept points of a line
@@ -10,6 +12,7 @@ const SMOOTH = 0.45;        // share of each finger move followed at once; the r
 const SHAPE_TAP_SIZE = 180; // a tap with the shape tool drops a shape this big
 const SAVE_DELAY_MS = 400;
 const SHAPE_NAMES = { circle: 'Rond', square: 'Carré', triangle: 'Triangle', star: 'Étoile', heart: 'Cœur' };
+const SPARKLE_EVERY_PX = 9;  // finger travel between two stars of a rainbow stroke
 const DOT_PX = [6, 11, 18, 28];  // the sizes as shown on their buttons
 
 const stage = $('#draw-stage');
@@ -19,6 +22,7 @@ const fills = fillCanvas.getContext('2d');
 const lines = lineCanvas.getContext('2d');
 const live = liveCanvas.getContext('2d');
 const pop = $('#draw-pop');
+const sparkles = sparkler($('#sparkles'));
 const tool = { kind: 'brush', color: COLORS[0], size: 1, shape: 'circle' };  // kept from one drawing to the next
 let A = null;  // the drawing on screen
 let pen = null;
@@ -50,6 +54,7 @@ export function leaveDraw() {
   A = null;
   pen = null;
   closePop();
+  sparkles.clear();
 }
 
 function layout() {
@@ -65,6 +70,7 @@ function layout() {
   }
   A.s = s;
   A.k = fillCanvas.width / PAGE_W;
+  sparkles.resize(r.width, r.height);
   renderAll();
 }
 
@@ -145,7 +151,19 @@ function addPoint(x, y) {
   pen.sy += (y - pen.sy) * SMOOTH;
   const p = pen.op.p;
   const qx = Math.round(pen.sx), qy = Math.round(pen.sy);
-  if (Math.hypot(qx - p[p.length - 2], qy - p[p.length - 1]) >= MIN_STEP) p.push(qx, qy);
+  const d = Math.hypot(qx - p[p.length - 2], qy - p[p.length - 1]);
+  if (d >= MIN_STEP) { p.push(qx, qy); pen.len += d; }
+}
+
+const isRainbow = (op) => op && op.c === RAINBOW;
+
+// Stars around a point of the page, in the hue the rainbow has there.
+function sparkleAt(x, y, turn, n = 1, spread = 0) {
+  const r = stage.getBoundingClientRect(), sr = sheet.getBoundingClientRect();
+  const cx = sr.left - r.left + x * A.s, cy = sr.top - r.top + y * A.s;
+  const reach = spread || SIZES[tool.size] * A.s / 2 + 6;
+  if (n === 1) sparkles.emit(cx, cy, turn, reach);
+  else sparkles.burst(cx, cy, turn, n, reach);
 }
 
 stage.addEventListener('pointerdown', (e) => {
@@ -155,10 +173,12 @@ stage.addEventListener('pointerdown', (e) => {
   A.left = r.left; A.top = r.top;
   try { stage.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
   const [x, y] = toPage(e);
-  pen = { id: e.pointerId, cx: e.clientX, cy: e.clientY, x, y, sx: x, sy: y, moved: false, op: null };
+  pen = { id: e.pointerId, cx: e.clientX, cy: e.clientY, lx: e.clientX, ly: e.clientY, x, y, sx: x, sy: y,
+    moved: false, op: null, len: 0, spark: 0 };
   const w = SIZES[tool.size], start = [Math.round(x), Math.round(y)];
   if (tool.kind === 'brush') pen.op = { t: 'line', c: tool.color, w, p: start };
   else if (tool.kind === 'eraser') pen.op = { t: 'erase', w, p: start };
+  if (isRainbow(pen.op)) sparkleAt(x, y, 0, 3);
   showLive();
 });
 
@@ -168,6 +188,11 @@ stage.addEventListener('pointermove', (e) => {
   if (pen.op && pen.op.p) {
     const all = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
     for (const ev of all.length ? all : [e]) addPoint(...toPage(ev));
+    if (isRainbow(pen.op)) {
+      pen.spark += Math.hypot(e.clientX - pen.lx, e.clientY - pen.ly);
+      for (; pen.spark >= SPARKLE_EVERY_PX; pen.spark -= SPARKLE_EVERY_PX) sparkleAt(pen.sx, pen.sy, pen.len / RAINBOW_LEN);
+    }
+    pen.lx = e.clientX; pen.ly = e.clientY;
   } else if (tool.kind === 'shape' && pen.moved) {
     const [x, y] = toPage(e);
     pen.op = { t: 'shape', k: tool.shape, c: tool.color, w: SIZES[tool.size], b: boxOf(pen.x, pen.y, x, y) };
@@ -192,9 +217,14 @@ function penUp(e) {
     const h = SHAPE_TAP_SIZE / 2;
     const b = g.moved ? boxOf(g.x, g.y, x, y) : boxOf(g.x - h, g.y - h, g.x + h, g.y + h);
     commit({ t: 'shape', k: tool.shape, c: tool.color, w: SIZES[tool.size], b });
+    if (tool.color === RAINBOW) sparkleAt(b[0] + b[2] / 2, b[1] + b[3] / 2, 0, 18, Math.max(b[2], b[3]) * A.s / 2);
   } else if (tool.kind === 'bucket' && !g.moved) {
     const loops = fillRegion(A.ops, g.x, g.y);
-    if (loops && loops.length) { commit({ t: 'fill', c: tool.color, r: loops }); vibrate(12); }
+    if (loops && loops.length) {
+      commit({ t: 'fill', c: tool.color, r: loops });
+      vibrate(12);
+      if (tool.color === RAINBOW) sparkleAt(g.x, g.y, 0, 20, 50);
+    }
   }
 }
 stage.addEventListener('pointerup', penUp);
@@ -223,8 +253,9 @@ const shapeIcon = (k) => `<svg viewBox="-0.2 -0.2 1.4 1.4" class="shape"><path d
 function sizeDot(i) {
   const dot = el('span', 'size-dot');
   dot.style.width = dot.style.height = DOT_PX[i] + 'px';
-  dot.style.background = tool.color;
-  if (inkFor(tool.color) !== '#fff') dot.style.boxShadow = 'inset 0 0 0 1.5px rgba(0, 0, 0, .3)';
+  if (tool.color === RAINBOW) dot.classList.add('rainbow');
+  else dot.style.background = tool.color;
+  if (tool.color === RAINBOW || inkFor(tool.color) !== '#fff') dot.style.boxShadow = 'inset 0 0 0 1.5px rgba(0, 0, 0, .3)';
   return dot;
 }
 
@@ -232,8 +263,9 @@ function updateTools() {
   for (const b of document.querySelectorAll('#draw .tool[data-tool]')) b.classList.toggle('sel', b.dataset.tool === tool.kind);
   const shapeBtn = $('#draw .tool[data-tool="shape"]');
   shapeBtn.innerHTML = shapeIcon(tool.shape);
-  shapeBtn.setAttribute('aria-label', 'Formes : ' + SHAPE_NAMES[tool.shape]);
+  shapeBtn.setAttribute('aria-label', t('Formes : {name}', { name: t(SHAPE_NAMES[tool.shape]) }));
   $('#size').replaceChildren(sizeDot(tool.size));
+  $('#size').setAttribute('aria-label', t('Épaisseur'));
   for (const b of $('#draw-colors').children) b.classList.toggle('sel', b.dataset.color === tool.color);
 }
 
@@ -246,7 +278,7 @@ function openPop(kind) {
       const b = el('button', 'tool' + (k === tool.shape ? ' sel' : ''));
       b.innerHTML = shapeIcon(k);
       b.dataset.shape = k;
-      b.setAttribute('aria-label', SHAPE_NAMES[k]);
+      b.setAttribute('aria-label', t(SHAPE_NAMES[k]));
       b.addEventListener('click', () => { tool.shape = k; tool.kind = 'shape'; closePop(); updateTools(); });
       pop.append(b);
     }
@@ -255,7 +287,7 @@ function openPop(kind) {
       const b = el('button', 'tool' + (i === tool.size ? ' sel' : ''));
       b.append(sizeDot(i));
       b.dataset.size = i;
-      b.setAttribute('aria-label', 'Épaisseur ' + (i + 1));
+      b.setAttribute('aria-label', t('Épaisseur {n}', { n: i + 1 }));
       b.addEventListener('click', () => { tool.size = i; closePop(); updateTools(); });
       pop.append(b);
     });
@@ -274,11 +306,12 @@ for (const b of document.querySelectorAll('#draw .tool[data-tool]')) {
 }
 $('#size').addEventListener('click', () => openPop('size'));
 
-for (const c of COLORS) {
+for (const c of [...COLORS, RAINBOW]) {
   const b = el('button', 'dot');
-  b.style.background = c;
+  if (c === RAINBOW) b.classList.add('rainbow'); else b.style.background = c;
   b.dataset.color = c;
-  b.setAttribute('aria-label', 'Couleur ' + c);
+  if (c === RAINBOW) b.setAttribute('data-t-aria', '');  // translated with the page
+  b.setAttribute('aria-label', c === RAINBOW ? 'Arc-en-ciel' : t('Couleur {c}', { c }));
   b.addEventListener('click', () => {
     tool.color = c;
     if (tool.kind === 'eraser') tool.kind = 'brush';  // picking a colour means painting again
@@ -291,7 +324,7 @@ for (const c of COLORS) {
 async function share() {
   if (!A || !A.ops.length) return;
   try {
-    await sharePng(await canvasPng(renderFlat(A.ops, 1200)), `giuno-dessin-${A.id}.png`, 'Mon dessin');
+    await sharePng(await canvasPng(renderFlat(A.ops, 1200)), `giuno-dessin-${A.id}.png`, t('Mon dessin'));
   } catch (e) {
     console.error('share failed:', e);
   }
@@ -304,7 +337,7 @@ $('#draw-share').addEventListener('click', share);
 $('#draw-delete').addEventListener('click', async () => {
   if (!A) return;
   const a = A;
-  if (a.ops.length && !(await confirmDialog('Jeter ce dessin ?', 'Jeter'))) return;
+  if (a.ops.length && !(await confirmDialog(t('Jeter ce dessin ?'), t('Jeter')))) return;
   if (A !== a) return;
   clearTimeout(a.timer);
   a.ops = [];
@@ -322,4 +355,5 @@ export const debug = {
     return [r.left + x * A.s, r.top + y * A.s];
   },
   flushSave,
+  sparkles,
 };

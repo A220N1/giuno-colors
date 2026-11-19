@@ -33,10 +33,21 @@ export function inkFor(hex) {
   return lum > 150 ? '#333' : '#fff';
 }
 
+// A profile's animal, or for profiles made before the animals, its initial on its colour.
 export function face(profile) {
+  if (profile.animal) {
+    const f = el('span', 'face animal');
+    const img = el('img');
+    img.src = `avatars/${profile.animal}.svg`;
+    img.alt = '';
+    img.draggable = false;
+    f.append(img);
+    return f;
+  }
+  const color = profile.color || '#9e9e9e';
   const f = el('span', 'face', (profile.name.trim()[0] || '?').toUpperCase());
-  f.style.background = profile.color;
-  f.style.color = inkFor(profile.color);
+  f.style.background = color;
+  f.style.color = inkFor(color);
   return f;
 }
 
@@ -58,10 +69,10 @@ export function onLongPress(target, ms, handler) {
   target.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
-export function confirmDialog(text, okLabel = 'OK') {
+export function confirmDialog(text, okLabel) {
   return new Promise((resolve) => {
     $('#confirm-text').textContent = text;
-    $('#confirm-yes').textContent = okLabel;
+    $('#confirm-yes').textContent = okLabel || 'OK';
     $('#confirm').hidden = false;
     const done = (v) => { $('#confirm').hidden = true; resolve(v); };
     $('#confirm-yes').onclick = () => done(true);

@@ -7,6 +7,7 @@
 //   { t: 'erase', w, p: [...] }                     eraser stroke, clears both layers
 //   { t: 'shape', k, c, w, b: [x, y, width, height] }
 //   { t: 'fill', c, r: [[x0, y0, x1, y1, ...], ...] } closed loops, even-odd rule
+// The colour c is '#rrggbb' or 'rainbow': pastel hues turning along a stroke, or across a fill or shape.
 
 export const PAGE_W = 800, PAGE_H = 1000;
 export const SIZES = [6, 14, 28, 52];
@@ -14,6 +15,9 @@ export const COLORS = [
   '#1f1f1f', '#9e9e9e', '#8d5a3b', '#e53935', '#fb8c00', '#fdd835', '#9ccc65', '#2e9d4a',
   '#ffffff', '#f5c9a0', '#f06292', '#c39bd3', '#8e44ad', '#1e63c9', '#64b5f6', '#26c6da',
 ];
+export const RAINBOW = 'rainbow';
+export const RAINBOW_LEN = 600;  // page units of stroke for one full turn of the rainbow
+export const rainbowAt = (turn) => `hsl(${Math.round((((turn % 1) + 1) % 1) * 360)}, 88%, 76%)`;
 
 const WALL_ALPHA = 128;  // a pixel of a line at least this opaque stops the paint bucket
 const GROW_PX = 2;       // how far a fill reaches under the lines that bound it
@@ -87,11 +91,78 @@ function stroke(ctx, path, color, width) {
   ctx.stroke(path);
 }
 
+// A diagonal pastel rainbow over a box, for fills and shapes.
+function rainbowGradient(ctx, [x, y, w, h]) {
+  const g = ctx.createLinearGradient(x, y, x + w, y + h);
+  for (let i = 0; i <= 6; i++) g.addColorStop(i / 6, rainbowAt(i / 6));
+  return g;
+}
+
+function loopsBox(loops) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const l of loops) {
+    for (let i = 0; i < l.length; i += 2) {
+      x0 = Math.min(x0, l[i]); x1 = Math.max(x1, l[i]);
+      y0 = Math.min(y0, l[i + 1]); y1 = Math.max(y1, l[i + 1]);
+    }
+  }
+  return [x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)];
+}
+
+// The same curve as linePath, piece by piece, each piece in the hue reached at that length.
+function rainbowLine(ctx, p, width) {
+  ctx.lineWidth = width;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const n = p.length / 2;
+  let x = p[0], y = p[1], len = 0;
+  if (n === 1) {
+    ctx.strokeStyle = rainbowAt(0);
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 0.01, y); ctx.stroke();
+    return;
+  }
+  for (let i = 1; i < n; i++) {
+    const last = i === n - 1;
+    const qx = p[2 * i], qy = p[2 * i + 1];
+    const ex = last ? qx : (qx + p[2 * i + 2]) / 2, ey = last ? qy : (qy + p[2 * i + 3]) / 2;
+    const d = last ? Math.hypot(qx - x, qy - y) : Math.hypot(qx - x, qy - y) + Math.hypot(ex - qx, ey - qy);
+    ctx.strokeStyle = rainbowAt((len + d / 2) / RAINBOW_LEN);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    if (last) ctx.lineTo(ex, ey); else ctx.quadraticCurveTo(qx, qy, ex, ey);
+    ctx.stroke();
+    len += d; x = ex; y = ey;
+  }
+}
+
+// Length of a stroke so far, as rainbowLine measures it.
+export function lineLength(p) {
+  const n = p.length / 2;
+  let x = p[0], y = p[1], len = 0;
+  for (let i = 1; i < n; i++) {
+    const last = i === n - 1;
+    const qx = p[2 * i], qy = p[2 * i + 1];
+    const ex = last ? qx : (qx + p[2 * i + 2]) / 2, ey = last ? qy : (qy + p[2 * i + 3]) / 2;
+    len += last ? Math.hypot(qx - x, qy - y) : Math.hypot(qx - x, qy - y) + Math.hypot(ex - qx, ey - qy);
+    x = ex; y = ey;
+  }
+  return len;
+}
+
+function drawLine(ctx, op) {
+  if (op.c === RAINBOW) rainbowLine(ctx, op.p, op.w);
+  else stroke(ctx, linePath(op.p), op.c, op.w);
+}
+
+function drawShape(ctx, op, path) {
+  stroke(ctx, path, op.c === RAINBOW ? rainbowGradient(ctx, op.b) : op.c, op.w);
+}
+
 // Draw one operation on the fill and line layers (either may be null).
 export function drawOp(fills, lines, op) {
   if (op.t === 'fill') {
     if (!fills) return;
-    fills.fillStyle = op.c;
+    fills.fillStyle = op.c === RAINBOW ? rainbowGradient(fills, loopsBox(op.r)) : op.c;
     fills.fill(pathOf(op), 'evenodd');
   } else if (op.t === 'erase') {
     for (const ctx of [fills, lines]) {
@@ -102,15 +173,16 @@ export function drawOp(fills, lines, op) {
       ctx.restore();
     }
   } else if (lines) {
-    stroke(lines, pathOf(op), op.c, op.w);
+    if (op.t === 'shape') drawShape(lines, op, pathOf(op));
+    else drawLine(lines, op);
   }
 }
 
 // An operation still being drawn, on the layer above both: the eraser shows as white paper.
 export function drawPreview(ctx, op) {
   if (op.t === 'erase') stroke(ctx, linePath(op.p), '#fff', op.w);
-  else if (op.t === 'shape') stroke(ctx, shapePath(op.k, op.b), op.c, op.w);
-  else stroke(ctx, linePath(op.p), op.c, op.w);
+  else if (op.t === 'shape') drawShape(ctx, op, shapePath(op.k, op.b));
+  else drawLine(ctx, op);
 }
 
 export function clearCanvas(ctx, k) {
