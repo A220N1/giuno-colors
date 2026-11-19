@@ -44,8 +44,12 @@ export function currentProfile() {
 
 export function setCurrent(id) { write('current', id); }
 
-export function addProfile(name, color) {
-  const p = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, color };
+// Interface language for this device, French unless English was picked.
+export const getLang = () => (read('lang', 'fr') === 'en' ? 'en' : 'fr');
+export const setLang = (lang) => write('lang', lang);
+
+export function addProfile(name, fields) {
+  const p = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, ...fields };
   write('profiles', [...profiles(), p]);
   return p;
 }

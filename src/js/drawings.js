@@ -10,6 +10,8 @@ function parseDrawing(entry) {
     return {
       id: entry.id,
       category: entry.category || '',
+      categoryEn: entry.category_en || '',
+      titleEn: entry.title_en || '',
       key: entry.id + '.' + entry.hash,  // a changed drawing starts over instead of mixing up zones
       title: root.getAttribute('data-title') || entry.id,
       level: parseInt(root.getAttribute('data-level'), 10) || 1,
@@ -64,10 +66,11 @@ const idCheck = (id) => (id * 151 + 89) & 255;
 
 // Rasterize the drawing with one colour per zone, then find for each zone the visible point
 // farthest from its edges: that is where its number fits best. The map also serves near-miss taps.
-// The zones must be on screen (getCTM) and carry data-i.
+// The zones must be on screen (getCTM) and carry data-i. Detailed drawings get a finer map,
+// or their small zones would be lost between its pixels.
 export function analyse(d, art, zones) {
   const [vx, vy, vw, vh] = d.vb;
-  const k = 640 / Math.max(vw, vh);
+  const k = (zones.length > 120 ? 1600 : 640) / Math.max(vw, vh);
   const W = Math.ceil(vw * k), H = Math.ceil(vh * k);
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;

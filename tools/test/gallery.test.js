@@ -64,4 +64,39 @@ run(async () => {
   const width = cards[0].querySelector('.bar > i').style.width;
   check(Math.abs(parseFloat(width) - 300 / zones) < 0.01, `saved progress shows on the card (${width})`);
   check(/Version \d\d\/\d\d\/\d{4}/.test(document.querySelector('#gallery').textContent), 'version shown');
+
+  // English on request, remembered on the device, then French again
+  const firstTitle = () => document.querySelector('#cards .cards .card .meta b').textContent;
+  check(document.documentElement.lang === 'fr' && firstTitle() === first.title, 'French by default');
+  document.querySelector('#gallery .lang-switch').click();
+  await settle();
+  check(document.documentElement.lang === 'en' && document.querySelector('#cards .section').textContent === 'My drawings',
+    'English after the switch');
+  check(firstTitle() === first.titleEn && first.titleEn, `drawing titles in English (${firstTitle()})`);
+  check(document.querySelector('#gallery .note a').textContent === 'Source code', 'page texts in English');
+  check(localStorage.getItem('giuno.lang') === '"en"', 'language remembered');
+  document.querySelector('#gallery .lang-switch').click();
+  await settle();
+  check(document.documentElement.lang === 'fr' && document.querySelector('#cards .section').textContent === 'Mes dessins'
+    && localStorage.getItem('giuno.lang') === '"fr"', 'back to French');
+
+  // a new profile picks an animal, the first one nobody has
+  document.querySelector('#who').click();
+  await settle();
+  document.querySelector('#profile-list .avatar.add').click();
+  await settle();
+  const animals = document.querySelectorAll('#profile-animals button');
+  check(animals.length === 15, `15 animals to pick from (${animals.length})`);
+  check(document.querySelector('#profile-animals button.sel').dataset.animal === 'fox', 'first free animal picked');
+  animals[4].click();
+  document.querySelector('#profile-name').value = 'Lou';
+  document.querySelector('#profile-form').requestSubmit();
+  await settle();
+  const img = document.querySelector('#who .face img');
+  check(shown('gallery') && img && img.getAttribute('src') === 'avatars/owl.svg', 'the gallery shows the owl');
+  let loaded = false;
+  try { await img.decode(); loaded = img.naturalWidth > 0; } catch (e) { loaded = false; }
+  check(loaded, 'avatar image loads');
+  const saved = JSON.parse(localStorage.getItem('giuno.profiles')).find((p) => p.name === 'Lou');
+  check(saved && saved.animal === 'owl' && !('color' in saved), 'profile saved with its animal');
 });

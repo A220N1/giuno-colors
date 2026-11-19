@@ -1,0 +1,38 @@
+{
+  "categories": {
+    "animaux": "Animals",
+    "vehicules": "Vehicles",
+    "nature": "Nature and houses",
+    "fetes": "Parties and treats",
+    "magie": "Magic",
+    "scenes": "Big scenes",
+    "details": "Big coloring pages"
+  },
+  "titles": {
+    "01_poisson": "The fish",
+    "02_maison": "The house",
+    "03_montgolfiere": "The hot-air balloon",
+    "10_lion": "The lion",
+    "11_tortue": "The turtle",
+    "12_chouette": "The owl",
+    "13_dinosaure": "The dinosaur",
+    "20_train": "The train",
+    "21_fusee": "The rocket",
+    "22_voilier": "The sailboat",
+    "23_pompiers": "The firefighters",
+    "30_jardin": "The garden",
+    "40_anniversaire": "The birthday",
+    "50_licorne": "The unicorn",
+    "51_chateau": "The castle",
+    "60_mer": "Under the sea",
+    "61_ferme": "The farm",
+    "62_espace": "In space",
+    "70_mandala_fleuri": "Flower mandala",
+    "71_mandala_soleil": "Sun mandala",
+    "72_rosace": "The rose window",
+    "73_papillon_vitrail": "Stained-glass butterfly",
+    "74_ville": "The town",
+    "75_foret": "The enchanted forest",
+    "76_recif": "The coral reef"
+  }
+}

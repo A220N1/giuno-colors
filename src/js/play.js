@@ -3,6 +3,7 @@ import { $, clamp, fmt, svgEl, showScreen, vibrate, inkFor, confirmDialog } from
 import { instantiate, paint, analyse } from './drawings.js';
 import { getProgress, setProgress } from './store.js';
 import { shareDrawing } from './share.js';
+import { t } from './i18n.js';
 
 const LABEL_MIN_PX = 9;    // numbers smaller than this on screen are hidden until zoomed in
 const TAP_SLOP_PX = 10;    // finger movement still counted as a tap
@@ -433,7 +434,7 @@ $('#bravo-share').addEventListener('click', share);
 $('#reset').addEventListener('click', async () => {
   if (!P) return;
   const { d, profileId } = P;
-  if (!(await confirmDialog('Tout effacer et recommencer ce dessin ?', 'Effacer'))) return;
+  if (!(await confirmDialog(t('Tout effacer et recommencer ce dessin ?'), t('Effacer')))) return;
   if (!P || P.d !== d) return;
   setProgress(profileId, d.key, []);
   openPlay(d, profileId, onBack);

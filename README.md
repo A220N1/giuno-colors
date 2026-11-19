@@ -2,17 +2,18 @@
 
 # Giuno Colors
 
-Color by number for children, and a blank page to draw on. It is a web app that installs on a phone like any other app and keeps working offline. The interface is in French.
+Color by number for children, and a blank page to draw on. It is a web app that installs on a phone like any other app and keeps working offline. The interface is in French by default and in English on request: the FR / EN switch at the top of the start screen changes it, and the phone remembers the choice for the next time.
 
 Use it at https://a220n1.github.io/giuno-colors/ and add it to the home screen from the browser menu.
 
 ## What it does
 
-- 18 drawings in six categories, from 12 zones for a young child to about 70 for the large scenes.
+- 25 drawings in seven categories, from 12 zones for a young child to about 500 in the big coloring pages, whose details only show once zoomed in.
 - Pick a color, then tap the zones that carry its number. Holding a zone picks its color.
 - Pinch to zoom and drag to move. Numbers too small to read appear as you zoom in, and the magnifier jumps to a zone that is left.
-- A blank page for free drawing, with a brush, a paint bucket for closed areas, an eraser, five shapes, four line sizes and 16 colors. Undo and redo reach back to the first stroke, even after the drawing was closed. Each child's drawings come first in the gallery.
-- Each child gets a profile with its own progress and drawings. Progress is kept in the browser's localStorage, drawings in its IndexedDB.
+- A blank page for free drawing, with a brush, a paint bucket for closed areas, an eraser, five shapes, four line sizes, 16 colors and a pastel rainbow. A rainbow stroke changes hue along its length and leaves a trail of twinkling stars while it is drawn; the paint bucket and the shapes fill or outline in a rainbow gradient. Undo and redo reach back to the first stroke, even after the drawing was closed. Each child's drawings come first in the gallery.
+- A padlock on the coloring and drawing screens hides the buttons that leave the drawing and stops the phone's Back gesture from leaving it. Holding the padlock for two seconds unlocks it. The app cannot block the home button: Android's app pinning does that.
+- Each child gets a profile with its own animal, progress and drawings. There are 15 animals to pick from. Progress, profiles and the language are kept in the browser's localStorage, drawings in its IndexedDB.
 - A drawing can be shared or saved as a PNG image.
 
 ## Build
@@ -31,22 +32,30 @@ python3 -m http.server --directory site 8000
 
 ## Drawings
 
-Drawings are SVG files grouped by category. `drawings/categories.json` lists the categories in gallery order, each with its folder and the name shown in the app, and each folder holds the drawings of its category.
+Drawings are SVG files grouped by category. `drawings/categories.json` lists the categories in gallery order, each with its folder and the name shown in the app, and each folder holds the drawings of its category. `drawings/english.json` gives the English name of each category (by folder) and the English title of each drawing (by file name). These names live outside the SVG files because the app keys a child's progress on the content of the file: editing a drawing starts it over.
 
 The root `<svg>` of a drawing has a `viewBox`, a `data-title`, a `data-level` (1 easy, 2 medium, 3 hard) and a `data-palette` listing `#rrggbb` colors. Any `path`, `rect`, `circle`, `ellipse` or `polygon` with `data-c="n"` is a zone to fill with palette color `n`, counted from 1. Later zones may cover earlier ones. Other elements are drawn as they are and do not react to taps. A zone that cannot be seen, or that stays too small to touch even at full zoom, starts already colored. `build.py` checks every drawing before bundling it.
 
-Most drawings are scenes: [OpenMoji](https://openmoji.org) emojis placed on a drawn background. `tools/scenes.py` describes them and writes their files with `tools/make_drawing.py`, which turns each color shape of an emoji into a zone, keeps the outlines, gives close colors one palette entry and leaves shapes too small to color as they are. Background colors never merge with each other. The scenes need the OpenMoji color SVG of each emoji they use, named `<hexcode>.svg`, from the [`color/svg`](https://github.com/hfg-gmuend/openmoji/tree/master/color/svg) folder of the OpenMoji repository:
+Most drawings are scenes: [OpenMoji](https://openmoji.org) emojis placed on a drawn background, from a dozen emojis in the simple ones to about forty in the big coloring pages. `tools/scenes.py` describes them and writes their files with `tools/make_drawing.py`, which turns each color shape of an emoji into a zone, keeps the outlines, gives close colors one palette entry and leaves shapes too small to color as they are. Background colors never merge with each other. The scenes need the OpenMoji color SVG of each emoji they use, named `<hexcode>.svg`, from the [`color/svg`](https://github.com/hfg-gmuend/openmoji/tree/master/color/svg) folder of the OpenMoji repository:
 
 ```sh
 python3 tools/scenes.py --list-emoji          # codes of the emojis to download
-python3 tools/scenes.py --sources <folder> --out drawings
+python3 tools/scenes.py --sources <folder> --out drawings [--only details/74_ville ...]
 ```
+
+`tools/patterns.py` draws the mandalas and the stained-glass pages from polar grids, with the colors placed symmetrically. It needs no source file:
+
+```sh
+python3 tools/patterns.py --out drawings [--only 70_mandala_fleuri ...]
+```
+
+Both scripts write the same files on every run, so regenerating a drawing does not reset a child's progress unless its layout changed.
 
 `tools/make_sample_drawings.py` regenerates the three hand-made drawings.
 
 ## Tests
 
-`tools/test/run.py` builds the site, serves it on a local port and opens it in headless Firefox once per test case. The colouring cases fill every drawing with simulated taps, and the drawing cases use every tool, save, reopen and delete a drawing, each at three window sizes. The gallery case starts with two profiles, saved progress and saved drawings. Each case writes a screenshot and a log. The tests need Python 3 and Firefox.
+`tools/test/run.py` builds the site, serves it on a local port and opens it in headless Firefox once per test case. The colouring cases fill every drawing with simulated taps, and the drawing cases use every tool, the rainbow and the padlock, save, reopen and delete a drawing, each at three window sizes. The gallery case starts with two profiles, saved progress and saved drawings, switches the language and creates a profile with an animal. Each case writes a screenshot and a log. The tests need Python 3 and Firefox.
 
 ```sh
 python3 tools/test/run.py --firefox <firefox executable> --profile <folder> --out <empty folder>
@@ -58,7 +67,7 @@ The profile folder holds a Firefox profile that only the tests use. Under WSL, r
 
 | Path | Content |
 |---|---|
-| `src/` | app source: page, styles, modules, manifest, service worker |
+| `src/` | app source: page, styles, modules, manifest, service worker, animal avatars in `src/avatars/` |
 | `drawings/` | the drawings |
 | `icons/` | logo and app icons; the PNG icons are exports of `icon.svg` and `icon-maskable.svg` |
 | `build.py` | builds the site |
@@ -67,4 +76,4 @@ The profile folder holds a Firefox profile that only the tests use. Under WSL, r
 
 ## License
 
-The code is under the GNU General Public License, version 3 or later (see `LICENSE`). The drawings in `drawings/` and the logo and icons in `icons/` are under CC BY-SA 4.0 (see `LICENSE-ART.md`).
+The code is under the GNU General Public License, version 3 or later (see `LICENSE`). The drawings in `drawings/`, the animal avatars in `src/avatars/` and the logo and icons in `icons/` are under CC BY-SA 4.0 (see `LICENSE-ART.md`).

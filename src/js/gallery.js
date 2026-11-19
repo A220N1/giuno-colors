@@ -4,6 +4,7 @@ import { drawings, instantiate, paint } from './drawings.js';
 import { getProgress, storageOk } from './store.js';
 import { listArt, newArtId } from './artstore.js';
 import { renderFlat } from './art.js';
+import { t, titleOf, categoryOf } from './i18n.js';
 
 const LEVELS = ['', 'Facile', 'Moyen', 'Difficile'];
 
@@ -19,10 +20,10 @@ export function showGallery(profile, onOpen, onWho, onArt) {
   list.replaceChildren();
   const row = el('div', 'art-row');
   const add = el('button', 'card art-new');
-  add.append(el('span', 'page', '+'), el('b', null, 'Nouveau dessin'));
+  add.append(el('span', 'page', '+'), el('b', null, t('Nouveau dessin')));
   add.addEventListener('click', () => onArt(newArtId()));
   row.append(add);
-  list.append(el('h2', 'section', 'Mes dessins'), row);
+  list.append(el('h2', 'section', t('Mes dessins')), row);
   const token = shown = {};
   listArt(profile.id).then((records) => {
     if (shown !== token) return;
@@ -40,7 +41,7 @@ export function showGallery(profile, onOpen, onWho, onArt) {
   for (const d of drawings) {
     if (d.category !== category || !cards) {  // drawings arrive grouped by category
       category = d.category;
-      if (category) list.append(el('h2', 'section', category));
+      if (category) list.append(el('h2', 'section', categoryOf(d)));
       cards = el('div', 'cards');
       list.append(cards);
     }
@@ -52,7 +53,7 @@ export function showGallery(profile, onOpen, onWho, onArt) {
     thumb.append(g);
 
     const meta = el('div', 'meta');
-    meta.append(el('b', null, d.title), el('span', null, `${LEVELS[d.level] || ''} · ${zones.length}`));
+    meta.append(el('b', null, titleOf(d)), el('span', null, `${LEVELS[d.level] ? t(LEVELS[d.level]) : ''} · ${zones.length}`));
     const bar = el('div', 'bar' + (filled.size === zones.length ? ' full' : ''));
     const fill = el('i');
     fill.style.width = (100 * filled.size / zones.length) + '%';

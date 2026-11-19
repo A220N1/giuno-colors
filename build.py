@@ -67,6 +67,10 @@ def main():
     if args.out.exists() and any(args.out.iterdir()):
         sys.exit(f"error: {args.out} is not empty")
     categories = json.loads((args.drawings / "categories.json").read_text(encoding="utf-8"))
+    english_file = args.drawings / "english.json"
+    english = json.loads(english_file.read_text(encoding="utf-8")) if english_file.exists() else {}
+    english_titles = english.get("titles", {})
+    english_categories = english.get("categories", {})
     folders = {c["folder"] for c in categories}
     stray = [p for p in args.drawings.rglob("*.svg") if p.parent.parent != args.drawings or p.parent.name not in folders]
     if stray:
@@ -81,6 +85,13 @@ def main():
             except (ValueError, ET.ParseError) as e:
                 sys.exit(f"error: {cat['folder']}/{path.name}: {e}")
             entry["category"] = cat["name"]
+            # English names are kept apart from the SVG files: editing a drawing resets its progress
+            if cat["folder"] in english_categories:
+                entry["category_en"] = english_categories[cat["folder"]]
+            if entry["id"] in english_titles:
+                entry["title_en"] = english_titles[entry["id"]]
+            else:
+                print(f"warning: {cat['folder']}/{path.name}: no English title in english.json", file=sys.stderr)
             entries.append(entry)
             print(f"{cat['folder']}/{path.name}: {n_zones} zones, {n_colors} colours")
     if not entries:

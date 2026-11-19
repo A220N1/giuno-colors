@@ -7,6 +7,7 @@ import math
 import re
 import sys
 import xml.etree.ElementTree as ET
+from array import array
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -15,6 +16,7 @@ SHAPES = {"path", "rect", "circle", "ellipse", "polygon"}
 NAMED = {"white": "#ffffff", "black": "#000000", "red": "#ff0000", "green": "#008000", "blue": "#0000ff",
          "yellow": "#ffff00", "gray": "#808080", "grey": "#808080", "orange": "#ffa500"}
 CREDIT = "OpenMoji (openmoji.org), CC BY-SA 4.0"
+INHERITED = ("fill", "fill-rule", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit")
 
 
 def local(tag):
@@ -266,15 +268,16 @@ def emoji_parts(root, recolor):
     """Elements of one emoji with their colour, area and outline points, in its own 72-unit grid."""
     parts = []
 
-    def walk(el, m, in_color, inherited_fill):
+    def walk(el, m, in_color, inherited_fill, style):
         tag = local(el.tag)
         if tag in ("title", "desc", "metadata", "defs"):
             return
         fill = el.get("fill", inherited_fill)
         if tag == "g":
             gm = multiply(m, parse_transform(el.get("transform"))) if el.get("transform") else m
+            gstyle = {**style, **{k: el.get(k) for k in INHERITED if el.get(k) is not None}}
             for child in el:
-                walk(child, gm, in_color or el.get("id") == "color", fill)
+                walk(child, gm, in_color or el.get("id") == "color", fill, gstyle)
             return
         own = multiply(m, parse_transform(el.get("transform"))) if el.get("transform") else m
         color = parse_color(fill)
@@ -285,10 +288,16 @@ def emoji_parts(root, recolor):
             "el": el, "in_color": in_color and tag in SHAPES, "color": color,
             "area": area(polys) * abs(own[0] * own[3] - own[1] * own[2]),
             "points": [apply(own, p) for poly in polys for p in poly],
+            "polys": [[apply(own, p) for p in poly] for poly in polys], "fill": fill, "tag": tag,
+            "stretch": math.sqrt(abs(own[0] * own[3] - own[1] * own[2])),
+            # what the element gets from its groups, which are not copied into the drawing; a group style
+            # without paint (some files set only line widths there) changes nothing and is left out
+            "inherit": {k: v for k, v in style.items() if el.get(k) is None}
+            if {"fill", "stroke"} & set(style) else {},
         })
 
     for child in root:
-        walk(child, (1, 0, 0, 1, 0, 0), False, None)
+        walk(child, (1, 0, 0, 1, 0, 0), False, None, {})
     return parts
 
 
@@ -353,6 +362,154 @@ def build_palette(weights, max_colors, merge_below, protected=frozenset()):
     return mapping, sorted(groups, key=order)
 
 
+# ---- what can be seen of each zone ----
+
+class Raster:
+    """Painter's raster of a drawing: the zone seen at each pixel, 0 where a decoration or nothing shows."""
+
+    def __init__(self, vb, k):
+        self.x0, self.y0, self.k = vb[0], vb[1], k
+        self.w, self.h = math.ceil(vb[2] * k), math.ceil(vb[3] * k)
+        self.lab = array("H", bytes(2 * self.w * self.h))
+
+    def span(self, r, xa, xb, value):
+        c0, c1 = max(0, math.ceil(xa - 0.5)), min(self.w, math.ceil(xb - 0.5))
+        if c1 > c0:
+            self.lab[r * self.w + c0:r * self.w + c1] = array("H", [value]) * (c1 - c0)
+
+    def fill(self, polys, value, evenodd=False):
+        k, rows = self.k, {}
+        for poly in polys:
+            pts = [((x - self.x0) * k, (y - self.y0) * k) for x, y in poly]
+            for (ax, ay), (bx, by) in zip(pts, pts[1:] + pts[:1]):
+                if ay == by:
+                    continue
+                d = 1 if by > ay else -1
+                if ay > by:
+                    ax, ay, bx, by = bx, by, ax, ay
+                slope = (bx - ax) / (by - ay)
+                for r in range(max(0, math.ceil(ay - 0.5)), min(self.h, math.ceil(by - 0.5))):
+                    rows.setdefault(r, []).append((ax + (r + 0.5 - ay) * slope, d))
+        for r, xs in rows.items():
+            xs.sort()
+            wind = 0
+            for (x, d), (nx, _) in zip(xs, xs[1:]):
+                wind += d
+                if (wind % 2 if evenodd else wind):
+                    self.span(r, x, nx, value)
+
+    def stroke(self, polys, width, value, closed):
+        """Round-capped strokes: each segment is a capsule, so each row meets it in one interval."""
+        k, rad = self.k, width * self.k / 2
+        for poly in polys:
+            pts = [((x - self.x0) * k, (y - self.y0) * k) for x, y in poly]
+            segs = list(zip(pts, pts[1:] + pts[:1])) if closed else list(zip(pts, pts[1:])) or [(pts[0], pts[0])]
+            for (ax, ay), (bx, by) in segs:
+                n = math.hypot(bx - ax, by - ay)
+                nx, ny = ((ay - by) / n * rad, (bx - ax) / n * rad) if n > 1e-9 else (0, 0)
+                quad = [(ax + nx, ay + ny), (bx + nx, by + ny), (bx - nx, by - ny), (ax - nx, ay - ny)]
+                lo = max(0, math.ceil(min(ay, by) - rad - 0.5))
+                hi = min(self.h, math.ceil(max(ay, by) + rad - 0.5))
+                for r in range(lo, hi):
+                    yc = r + 0.5
+                    xs = []
+                    for cx, cy in ((ax, ay), (bx, by)):
+                        dy = yc - cy
+                        if abs(dy) <= rad:
+                            s = math.sqrt(rad * rad - dy * dy)
+                            xs += [cx - s, cx + s]
+                    for (px, py), (qx, qy) in zip(quad, quad[1:] + quad[:1]):
+                        if (py <= yc < qy) or (qy <= yc < py):
+                            xs.append(px + (yc - py) * (qx - px) / (qy - py))
+                    if xs:
+                        self.span(r, min(xs), max(xs), value)
+
+    def radii(self, n):
+        """Inscribed radius of what shows of zones 1 to n, in drawing units (chamfer 3-4 distance)."""
+        w, h, lab = self.w, self.h, self.lab
+        dist = array("f", [0.0]) * (w * h)
+        for p in range(w * h):
+            if lab[p]:
+                dist[p] = 1e9
+        for y in range(h):
+            row = y * w
+            for x in range(w):
+                p = row + x
+                v = lab[p]
+                if not v:
+                    continue
+                best = dist[p]
+                for q, step, ok in ((p - 1, 3, x > 0), (p - w - 1, 4, x > 0 and y > 0), (p - w, 3, y > 0),
+                                    (p - w + 1, 4, y > 0 and x < w - 1)):
+                    c = (dist[q] if lab[q] == v else 0) + step if ok else step
+                    if c < best:
+                        best = c
+                dist[p] = best
+        out = [0.0] * (n + 1)
+        for y in range(h - 1, -1, -1):
+            row = y * w
+            for x in range(w - 1, -1, -1):
+                p = row + x
+                v = lab[p]
+                if not v:
+                    continue
+                best = dist[p]
+                for q, step, ok in ((p + 1, 3, x < w - 1), (p + w + 1, 4, x < w - 1 and y < h - 1),
+                                    (p + w, 3, y < h - 1), (p + w - 1, 4, y < h - 1 and x > 0)):
+                    c = (dist[q] if lab[q] == v else 0) + step if ok else step
+                    if c < best:
+                        best = c
+                dist[p] = best
+                if best > out[v]:
+                    out[v] = best
+        return [r / 3 / self.k for r in out]
+
+
+def visible_radii(vb, layers, line_width, k):
+    """Inscribed radius of what shows of each candidate zone, drawn in order as the app does.
+
+    Keys are (layer index, part index), the part being None for a background zone."""
+    ras = Raster(vb, k)
+    ids = []
+    for li, layer in enumerate(layers):
+        if "zone" in layer:
+            ids.append((li, None))
+            ras.fill(flatten_path(layer["zone"]), len(ids))
+        elif "deco" in layer:
+            deco = layer["deco"]
+            polys = flatten_path(deco["d"])
+            if deco.get("fill", "#000") != "none":
+                ras.fill(polys, 0)
+            if deco.get("stroke") and deco.get("stroke") != "none":
+                ras.stroke(polys, float(deco.get("stroke-width", 1)), 0, closed=False)
+        else:
+            m, s = layer["matrix"], layer["scale"]
+            for pi, p in enumerate(layer["parts"]):
+                polys = [[apply(m, q) for q in poly] for poly in p["polys"]]
+                if not polys or not polys[0]:
+                    continue
+                def attr(k, p=p):
+                    return p["el"].get(k, p["inherit"].get(k))
+
+                evenodd = attr("fill-rule") == "evenodd"
+                if p["zone"]:
+                    ids.append((li, pi))
+                    ras.fill(polys, len(ids), evenodd)
+                    continue
+                if p["fill"] != "none" and p["tag"] not in ("line", "polyline"):
+                    ras.fill(polys, 0, evenodd)
+                stroke = attr("stroke")
+                if stroke and stroke != "none":
+                    if line_width and lab(parse_color(stroke) or "#000000")[0] < 30 and attr("stroke-width"):
+                        width = line_width
+                    else:
+                        width = float(attr("stroke-width") or 1) * s * p["stretch"]
+                    ras.stroke(polys, width, 0, closed=p["tag"] in ("rect", "circle", "ellipse", "polygon"))
+    radii = ras.radii(len(ids))
+    return {key: radii[i + 1] for i, key in enumerate(ids)}
+
+
+
 def make(spec, sources):
     recolor = {parse_color(k): parse_color(v) for k, v in spec.get("recolor", {}).items()}
     min_area = spec.get("minArea", 4)
@@ -375,6 +532,24 @@ def make(spec, sources):
         else:
             layers.append({"deco": layer})
 
+    if "viewBox" in spec:
+        vb = spec["viewBox"]
+    else:
+        pts = [p for layer in layers for part in layer.get("parts", []) for p in part["points"]]
+        x0, y0 = min(p[0] for p in pts) - 3, min(p[1] for p in pts) - 3
+        x1, y1 = max(p[0] for p in pts) + 3, max(p[1] for p in pts) + 3
+        vb = [x0, y0, x1 - x0, y1 - y0]
+
+    if spec.get("minRadius"):
+        # a zone of which too little shows becomes a decoration, already in its colour
+        radii = visible_radii(vb, layers, line_width, spec.get("rasterScale", 1.5))
+        for li, layer in enumerate(layers):
+            if "zone" in layer and radii[(li, None)] < spec["minRadius"]:
+                layers[li] = {"deco": {"fill": layer["color"], "d": layer["zone"]}}
+            for pi, p in enumerate(layer.get("parts", [])):
+                if p["zone"] and radii[(li, pi)] < spec["minRadius"]:
+                    p["zone"] = False
+
     weights = {}
     for layer in layers:
         if "zone" in layer:
@@ -385,14 +560,6 @@ def make(spec, sources):
     protected = frozenset(layer["color"] for layer in layers if "zone" in layer)
     mapping, palette = build_palette(weights, spec.get("maxColors", 10), spec.get("mergeBelow", 8), protected)
     index = {c: k + 1 for k, c in enumerate(palette)}
-
-    if "viewBox" in spec:
-        vb = spec["viewBox"]
-    else:
-        pts = [p for layer in layers for part in layer.get("parts", []) for p in part["points"]]
-        x0, y0 = min(p[0] for p in pts) - 3, min(p[1] for p in pts) - 3
-        x1, y1 = max(p[0] for p in pts) + 3, max(p[1] for p in pts) + 3
-        vb = [x0, y0, x1 - x0, y1 - y0]
 
     out = []
     zones = 0
@@ -410,6 +577,8 @@ def make(spec, sources):
             out.append(f'  <g transform="matrix({" ".join(fmt(v) for v in m)})">')
             for p in layer["parts"]:
                 el = copy.deepcopy(p["el"])
+                for k, v in p["inherit"].items():
+                    el.set(k, v)
                 for e in el.iter():
                     e.tag = local(e.tag)
                     e.attrib.pop("id", None)

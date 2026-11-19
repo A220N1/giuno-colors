@@ -6,6 +6,8 @@ import { showGallery } from './gallery.js';
 import { showProfiles } from './profiles.js';
 import { openPlay, leavePlay } from './play.js';
 import { openDraw, leaveDraw } from './draw.js';
+import { resetLock } from './lock.js';
+import { lang, setLanguage, translatePage } from './i18n.js';
 
 // Screens map to the address: '' gallery, '#profils' profile choice, '#<drawing id>' colouring,
 // '#libre/<id>' free drawing. A screen opened from the gallery gets its own history entry, marked so
@@ -16,6 +18,7 @@ export function route() {
   const hash = decodeURIComponent(location.hash.slice(1));
   leavePlay();
   leaveDraw();
+  resetLock();
   const profile = currentProfile();
   if (!profile || startupPick || hash === 'profils') return showProfiles(pickProfile);
   const d = drawings.find((x) => x.id === hash);
@@ -58,6 +61,13 @@ function goBack() {
 
 addEventListener('hashchange', route);
 
+for (const b of document.querySelectorAll('.lang-switch')) {
+  b.addEventListener('click', () => {
+    setLanguage(lang() === 'fr' ? 'en' : 'fr');
+    route();  // the screen shown is drawn again in the new language
+  });
+}
+
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('service worker:', e));
@@ -79,4 +89,5 @@ $('#install').addEventListener('click', async () => {
 });
 addEventListener('appinstalled', () => { $('#install').hidden = true; });
 
+translatePage();
 route();

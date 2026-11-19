@@ -15,8 +15,10 @@ run(async () => {
   let zonesTotal = 0, autoTotal = 0;
 
   for (const [n, d] of drawings.entries()) {
+    const t0 = performance.now();
     await go(d.id);
     const P = play.debug.state();
+    if (P && P.zones.length > 120) note(`${d.id}: ${P.zones.length} zones, opened in ${Math.round(performance.now() - t0)} ms`);
     if (!check(P && P.d === d, `${d.id}: colouring screen opens`)) continue;
     const sr = stage.getBoundingClientRect();
     const screen = (p) => [sr.left + P.tx + p.x * P.s, sr.top + P.ty + p.y * P.s];

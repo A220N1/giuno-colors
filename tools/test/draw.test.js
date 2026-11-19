@@ -1,5 +1,6 @@
-// Free drawing: brush, shapes, paint bucket, eraser, undo and redo, saving in the gallery, sharing, deleting.
-import { run, check, note, clearStorage, frames, sleep, tap, drag, waitFor } from './harness.js';
+// Free drawing: brush, shapes, paint bucket, eraser, undo and redo, saving in the gallery, sharing, deleting,
+// the rainbow colour with its stars, and the padlock.
+import { run, check, note, clearStorage, frames, sleep, tap, hold, drag, waitFor } from './harness.js';
 
 const hex = (d) => '#' + [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, '0')).join('');
 const pixel = (canvas, x, y) => hex(canvas.getContext('2d').getImageData(x, y, 1, 1).data);
@@ -93,7 +94,10 @@ run(async () => {
     }
   }
   check(seam.length === 0, `no white seam around the circle (${seam.length} white pixels)`);
-  tap(stage, ...at(400, 300 - 150 + 1));
+  // the innermost pixel of the circle's line at the top, so the nearest free side is inside
+  let onLine = 150;
+  for (let y = 135; y <= 170; y++) if (pixel(img, 400, y) === BLACK) onLine = y;
+  tap(stage, ...at(400, onLine));
   check(A.ops.length === 8 && A.ops[7].t === 'fill', 'a tap on a line fills the nearest side');
 
   pickTool('eraser');
@@ -135,6 +139,52 @@ run(async () => {
   await waitFor(inGallery, 'gallery after deleting');
   await sleep(100);
   check(!document.querySelector('#cards .art-card') && (await store.listArt('p1')).length === 0, 'drawing deleted');
+
+  // rainbow: pastel hues turning along the stroke, stars while drawing, a rainbow fill
+  $('#cards .art-new').click();
+  await waitFor(opened, 'drawing screen');
+  const R = draw.debug.state();
+  pickColor(art.RAINBOW);
+  check(draw.debug.tool.color === art.RAINBOW && $('#draw-colors [data-color="rainbow"]').classList.contains('sel'), 'rainbow picked');
+  $('#size').click();
+  $('#draw-pop [data-size="2"]').click();
+  drag(stage, segment(60, 200, 740, 200, 80));
+  check(draw.debug.sparkles.count() > 10, `stars along the rainbow stroke (${draw.debug.sparkles.count()})`);
+  check(R.ops.length === 1 && R.ops[0].c === art.RAINBOW, 'rainbow stroke recorded');
+  img = flat();
+  const hues = [80, 400, 720].map((x) => pixel(img, x, 200));
+  const pastel = (c) => [1, 3, 5].every((i) => parseInt(c.slice(i, i + 2), 16) >= 0x70) && c !== WHITE;
+  check(new Set(hues).size === 3 && hues.every(pastel), `pastel hues changing along the stroke (${hues.join(' ')})`);
+  pickTool('bucket');
+  tap(stage, ...at(400, 600));
+  img = flat();
+  const g1 = pixel(img, 30, 400), g2 = pixel(img, 770, 970);
+  check(R.ops[1] && R.ops[1].t === 'fill' && R.ops[1].c === art.RAINBOW && pastel(g1) && pastel(g2) && g1 !== g2,
+    `rainbow fill (${g1} to ${g2})`);
+  await sleep(1300);
+  check(draw.debug.sparkles.count() === 0, 'the stars fade away');
+
+  // padlock: the exits hide, Back stays on the drawing, holding the padlock unlocks
+  const lockBtn = $('#draw .lock');
+  const shownEl = (sel) => getComputedStyle($(sel)).display !== 'none';
+  lockBtn.click();
+  check(document.body.classList.contains('locked') && !shownEl('#draw-back') && !shownEl('#draw-delete') && !shownEl('#draw-share'),
+    'locked: back, share and delete hidden');
+  check(shownEl('#undo') && history.state && history.state.lock, 'locked: undo still there, Back held by a history entry');
+  history.back();
+  await sleep(300);
+  check(!$('#draw').hidden && draw.debug.state() === R && document.body.classList.contains('locked'), 'Back while locked stays on the drawing');
+  check(!$('#toast').hidden, 'Back while locked says how to unlock');
+  const lr = lockBtn.getBoundingClientRect(), lx = lr.left + lr.width / 2, ly = lr.top + lr.height / 2;
+  await hold(lockBtn, lx, ly, 600);
+  await sleep(100);
+  check(document.body.classList.contains('locked'), 'a short press does not unlock');
+  await hold(lockBtn, lx, ly, 2300);
+  await sleep(300);
+  check(!document.body.classList.contains('locked') && shownEl('#draw-back'), 'holding the padlock two seconds unlocks');
+  check(history.state && !history.state.lock && history.state.pushed, 'history back to the drawing entry');
+  $('#draw-back').click();
+  await waitFor(inGallery, 'gallery after unlocking');
 
   // a small house for the screenshot
   $('#cards .art-new').click();
