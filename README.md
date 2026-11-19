@@ -43,6 +43,16 @@ python3 tools/scenes.py --sources <folder> --out drawings
 
 `tools/make_sample_drawings.py` regenerates the three hand-made drawings.
 
+## Tests
+
+`tools/test/run.py` builds the site, serves it on a local port and opens it in headless Firefox once per test case. The colouring cases fill every drawing with simulated taps at three window sizes; the gallery case starts with two profiles and some saved progress. Each case writes a screenshot and a log. The tests need Python 3 and Firefox.
+
+```sh
+python3 tools/test/run.py --firefox <firefox executable> --profile <folder> --out <empty folder>
+```
+
+The profile folder holds a Firefox profile that only the tests use. Under WSL, run the Windows `firefox.exe` and keep the profile on a Windows drive, because a profile inside the Linux file system gets no localStorage or IndexedDB. `--list` shows the cases and `--only <case>` runs one of them. The service worker is off during the tests, so offline use can only be checked on a phone.
+
 ## Layout
 
 | Path | Content |
@@ -52,6 +62,7 @@ python3 tools/scenes.py --sources <folder> --out drawings
 | `icons/` | logo and app icons; the PNG icons are exports of `icon.svg` and `icon-maskable.svg` |
 | `build.py` | builds the site |
 | `tools/` | helper scripts |
+| `tools/test/` | browser tests |
 
 ## License
 
