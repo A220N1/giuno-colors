@@ -53,7 +53,9 @@ run(async () => {
       if (P.filled.has(i) || P.colors[i] !== P.sel) return false;
       const [x, y] = screen(P.info.pos[i]);
       const shown = x >= sr.left && x <= sr.right && y >= sr.top && y <= sr.bottom;
-      return shown && !P.labelEls[i].el.classList.contains('off') && P.labelEls[i].fs * P.s >= 20;
+      // 20 px, or as big as the maximum zoom (10 times the fitted view) allows on a small screen
+      const want = Math.min(20, P.labelEls[i].fs * P.fit * 10 * 0.99);
+      return shown && !P.labelEls[i].el.classList.contains('off') && P.labelEls[i].fs * P.s >= want;
     });
     check(found, `${d.id}: magnifier shows a zone of colour ${P.sel + 1}`);
 

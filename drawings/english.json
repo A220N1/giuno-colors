@@ -6,7 +6,8 @@
     "fetes": "Parties and treats",
     "magie": "Magic",
     "scenes": "Big scenes",
-    "details": "Big coloring pages"
+    "details": "Big coloring pages",
+    "tableaux": "Famous paintings"
   },
   "titles": {
     "01_poisson": "The fish",
@@ -33,6 +34,15 @@
     "73_papillon_vitrail": "Stained-glass butterfly",
     "74_ville": "The town",
     "75_foret": "The enchanted forest",
-    "76_recif": "The coral reef"
+    "76_recif": "The coral reef",
+    "81_chat": "The cat at the window (Hiroshige)",
+    "83_flamant_rose": "The flamingo (Audubon)",
+    "84_fuji_rouge": "Red Fuji (Hokusai)",
+    "85_vague": "The Great Wave (Hokusai)",
+    "87_aigle": "The eagle in the snow (Hiroshige)",
+    "88_pelican": "The pelican (Audubon)",
+    "89_cardinaux": "The cardinals (Audubon)",
+    "90_passerin": "The painted bunting (Audubon)",
+    "91_oiseau_bleu": "The bluebird (Audubon)"
   }
 }

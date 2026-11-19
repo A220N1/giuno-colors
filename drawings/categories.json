@@ -5,5 +5,6 @@
   {"folder": "fetes", "name": "Fêtes et gourmandises"},
   {"folder": "magie", "name": "Magie"},
   {"folder": "scenes", "name": "Grandes scènes"},
-  {"folder": "details", "name": "Grands coloriages"}
+  {"folder": "details", "name": "Grands coloriages"},
+  {"folder": "tableaux", "name": "Tableaux célèbres"}
 ]
