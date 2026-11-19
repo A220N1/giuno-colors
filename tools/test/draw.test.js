@@ -179,12 +179,50 @@ run(async () => {
   await hold(lockBtn, lx, ly, 600);
   await sleep(100);
   check(document.body.classList.contains('locked'), 'a short press does not unlock');
-  await hold(lockBtn, lx, ly, 2300);
+  await hold(lockBtn, lx, ly, 1500);
   await sleep(300);
-  check(!document.body.classList.contains('locked') && shownEl('#draw-back'), 'holding the padlock two seconds unlocks');
+  check(!document.body.classList.contains('locked') && shownEl('#draw-back'), 'holding the padlock a little over a second unlocks');
   check(history.state && !history.state.lock && history.state.pushed, 'history back to the drawing entry');
   $('#draw-back').click();
   await waitFor(inGallery, 'gallery after unlocking');
+
+  // mirror: what is drawn on one side shows on the other, the bucket fills both, undo takes both back
+  $('#cards .art-new').click();
+  await waitFor(opened, 'drawing screen');
+  const M = draw.debug.state();
+  $('#mirror').click();
+  check(!$('#draw-pop').hidden && $('#draw-pop').querySelectorAll('[data-mirror]').length === 4, 'mirror menu with four modes');
+  $('#draw-pop [data-mirror="2"]').click();
+  check(draw.debug.tool.mirror === 2 && $('.sheet .guides line'), 'left and right mirror on, its axis shown');
+  $('#size').click();
+  $('#draw-pop [data-size="1"]').click();
+  pickTool('brush');
+  pickColor(BLACK);
+  drag(stage, ring(200, 400, 100));
+  check(M.ops[0].m === 2, 'stroke recorded with its mirror');
+  img = flat();
+  let left = 0, both = 0;
+  for (let x = 0; x < 400; x++) if (pixel(img, x, 400) === BLACK) { left++; if (pixel(img, 799 - x, 400) === BLACK) both++; }
+  check(left > 10 && both >= left - 2, `the circle on the left is drawn on the right too (${both} of ${left})`);
+  bucket(RED, 200, 400);
+  img = flat();
+  check(pixel(img, 200, 400) === RED && pixel(img, 600, 400) === RED && pixel(img, 400, 400) === WHITE, 'the bucket fills both circles');
+  $('#undo').click();
+  check(pixel(flat(), 600, 400) === WHITE && pixel(flat(), 200, 400) === WHITE, 'undo takes both fills back');
+  $('#mirror').click();
+  $('#draw-pop [data-mirror="6"]').click();
+  pickTool('brush');
+  pickColor(BLACK);
+  drag(stage, segment(400, 300, 400, 150, 20));
+  check(M.ops[M.ops.length - 1].m === 6 && $('.sheet .guides').children.length === 3, 'kaleidoscope stroke, three axes shown');
+  img = flat();
+  // the point 250 above the middle, turned 120 degrees round it
+  check(pixel(img, 400, 250) === BLACK && pixel(img, 617, 625) === BLACK && pixel(img, 183, 625) === BLACK, 'kaleidoscope copies');
+  $('#mirror').click();
+  $('#draw-pop [data-mirror="1"]').click();
+  check(draw.debug.tool.mirror === 1 && !$('.sheet .guides').children.length, 'mirror off');
+  $('#draw-back').click();
+  await waitFor(inGallery, 'gallery after the mirror');
 
   // a small house for the screenshot
   $('#cards .art-new').click();

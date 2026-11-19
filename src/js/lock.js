@@ -1,10 +1,10 @@
 // The padlock of the colouring and drawing screens: once locked, the buttons that leave the drawing
-// hide and the phone's Back does nothing, until someone holds the padlock for two seconds.
+// hide and the phone's Back does nothing, until someone holds the padlock for a little over a second.
 // Back is held by an extra history entry at the same address, put back each time it is used.
 import { $, vibrate } from './util.js';
 import { t } from './i18n.js';
 
-const HOLD_MS = 2000;
+const HOLD_MS = 1200;
 const TOAST_MS = 2200;
 
 let locked = false;

@@ -36,6 +36,16 @@ run(async () => {
       if (!P.filled.has(i)) check(P.labelEls[i], `${d.id}: zone ${i} has a number`);
     });
 
+    if (n === 0) {
+      const hl = P.zones.find((z) => z.classList.contains('hl'));
+      check(hl && getComputedStyle(hl).fill.startsWith('url('), `${d.id}: zones to colour show a checkerboard`);
+      const pat = document.querySelector('#stage pattern');
+      const w0 = parseFloat(pat.getAttribute('width'));
+      play.debug.setView(P.s * 2, P.tx, P.ty);
+      check(Math.abs(parseFloat(pat.getAttribute('width')) - w0 / 2) < w0 * 0.01, `${d.id}: checkerboard keeps its size on screen when zooming`);
+      play.debug.setView(P.fit, 0, 0);
+    }
+
     // the magnifier brings a zone of the chosen colour on screen with a readable number
     // (to the middle, unless the view cannot move further)
     document.querySelector('#find').click();

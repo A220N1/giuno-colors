@@ -9,10 +9,10 @@ Use it at https://a220n1.github.io/giuno-colors/ and add it to the home screen f
 ## What it does
 
 - 25 drawings in seven categories, from 12 zones for a young child to about 500 in the big coloring pages, whose details only show once zoomed in.
-- Pick a color, then tap the zones that carry its number. Holding a zone picks its color.
+- Pick a color, then tap the zones that carry its number; they show a checkerboard until they are filled. Holding a zone picks its color.
 - Pinch to zoom and drag to move. Numbers too small to read appear as you zoom in, and the magnifier jumps to a zone that is left.
-- A blank page for free drawing, with a brush, a paint bucket for closed areas, an eraser, five shapes, four line sizes, 16 colors and a pastel rainbow. A rainbow stroke changes hue along its length and leaves a trail of twinkling stars while it is drawn; the paint bucket and the shapes fill or outline in a rainbow gradient. Undo and redo reach back to the first stroke, even after the drawing was closed. Each child's drawings come first in the gallery.
-- A padlock on the coloring and drawing screens hides the buttons that leave the drawing and stops the phone's Back gesture from leaving it. Holding the padlock for two seconds unlocks it. The app cannot block the home button: Android's app pinning does that.
+- A blank page for free drawing, with a brush, a paint bucket for closed areas, an eraser, five shapes, four line sizes, 16 colors and a pastel rainbow. A rainbow stroke changes hue along its length and leaves a trail of twinkling stars while it is drawn; the paint bucket and the shapes fill or outline in a rainbow gradient. A mirror repeats every stroke, shape, eraser stroke and fill on the other side of the page, in its four quarters, or six times round the middle like a kaleidoscope, with its axes shown as dashed lines. Undo and redo reach back to the first stroke, even after the drawing was closed. Each child's drawings come first in the gallery.
+- A padlock on the coloring and drawing screens hides the buttons that leave the drawing and stops the phone's Back gesture from leaving it. Holding the padlock for a little over a second unlocks it. The app cannot block the home button: Android's app pinning does that.
 - Each child gets a profile with its own animal, progress and drawings. There are 15 animals to pick from. Progress, profiles and the language are kept in the browser's localStorage, drawings in its IndexedDB.
 - A drawing can be shared or saved as a PNG image.
 

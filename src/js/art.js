@@ -8,6 +8,8 @@
 //   { t: 'shape', k, c, w, b: [x, y, width, height] }
 //   { t: 'fill', c, r: [[x0, y0, x1, y1, ...], ...] } closed loops, even-odd rule
 // The colour c is '#rrggbb' or 'rainbow': pastel hues turning along a stroke, or across a fill or shape.
+// Lines, eraser strokes and shapes may carry m (2, 4 or 6): drawn again as their mirror images around
+// the middle of the page. A fill with z uses the nonzero rule: its loops may come from several taps.
 
 export const PAGE_W = 800, PAGE_H = 1000;
 export const SIZES = [6, 14, 28, 52];
@@ -18,6 +20,46 @@ export const COLORS = [
 export const RAINBOW = 'rainbow';
 export const RAINBOW_LEN = 600;  // page units of stroke for one full turn of the rainbow
 export const rainbowAt = (turn) => `hsl(${Math.round((((turn % 1) + 1) % 1) * 360)}, 88%, 76%)`;
+
+// Mirror modes: 1 none, 2 left and right, 4 the four quarters, 6 a kaleidoscope of three turns.
+export const MIRRORS = [1, 2, 4, 6];
+const MID_X = PAGE_W / 2, MID_Y = PAGE_H / 2;
+const mirrorCache = new Map();
+
+// The copies of mode m as canvas matrices [a, b, c, d, e, f], the first one being the identity.
+export function mirrorMatrices(m) {
+  let list = mirrorCache.get(m);
+  if (list) return list;
+  list = [];
+  const add = (a, b, c, d) => list.push([a, b, c, d, MID_X - a * MID_X - c * MID_Y, MID_Y - b * MID_X - d * MID_Y]);
+  add(1, 0, 0, 1);
+  if (m === 2 || m === 4) add(-1, 0, 0, 1);
+  if (m === 4) { add(1, 0, 0, -1); add(-1, 0, 0, -1); }
+  if (m === 6) {
+    for (let i = 0; i < 3; i++) {
+      const a = i * 2 * Math.PI / 3, co = Math.cos(a), si = Math.sin(a);
+      if (i) add(co, si, -si, co);
+      add(-co, -si, -si, co);  // the turn after a left-right flip
+    }
+  }
+  mirrorCache.set(m, list);
+  return list;
+}
+
+export function mirrorPoints(m, x, y) {
+  return mirrorMatrices(m).map(([a, b, c, d, e, f]) => [a * x + c * y + e, b * x + d * y + f]);
+}
+
+// Run draw() once per copy of the operation's mirror mode, on each given context.
+function mirrored(op, ctxs, draw) {
+  const list = op.m > 1 ? mirrorMatrices(op.m) : null;
+  if (!list) { draw(); return; }
+  for (const mat of list) {
+    for (const ctx of ctxs) if (ctx) { ctx.save(); ctx.transform(...mat); }
+    draw();
+    for (const ctx of ctxs) if (ctx) ctx.restore();
+  }
+}
 
 const WALL_ALPHA = 128;  // a pixel of a line at least this opaque stops the paint bucket
 const GROW_PX = 2;       // how far a fill reaches under the lines that bound it
@@ -163,26 +205,32 @@ export function drawOp(fills, lines, op) {
   if (op.t === 'fill') {
     if (!fills) return;
     fills.fillStyle = op.c === RAINBOW ? rainbowGradient(fills, loopsBox(op.r)) : op.c;
-    fills.fill(pathOf(op), 'evenodd');
+    fills.fill(pathOf(op), op.z ? 'nonzero' : 'evenodd');
   } else if (op.t === 'erase') {
-    for (const ctx of [fills, lines]) {
-      if (!ctx) continue;
-      ctx.save();
-      ctx.globalCompositeOperation = 'destination-out';
-      stroke(ctx, pathOf(op), '#000', op.w);
-      ctx.restore();
-    }
+    mirrored(op, [fills, lines], () => {
+      for (const ctx of [fills, lines]) {
+        if (!ctx) continue;
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        stroke(ctx, pathOf(op), '#000', op.w);
+        ctx.restore();
+      }
+    });
   } else if (lines) {
-    if (op.t === 'shape') drawShape(lines, op, pathOf(op));
-    else drawLine(lines, op);
+    mirrored(op, [lines], () => {
+      if (op.t === 'shape') drawShape(lines, op, pathOf(op));
+      else drawLine(lines, op);
+    });
   }
 }
 
 // An operation still being drawn, on the layer above both: the eraser shows as white paper.
 export function drawPreview(ctx, op) {
-  if (op.t === 'erase') stroke(ctx, linePath(op.p), '#fff', op.w);
-  else if (op.t === 'shape') drawShape(ctx, op, shapePath(op.k, op.b));
-  else drawLine(ctx, op);
+  mirrored(op, [ctx], () => {
+    if (op.t === 'erase') stroke(ctx, linePath(op.p), '#fff', op.w);
+    else if (op.t === 'shape') drawShape(ctx, op, shapePath(op.k, op.b));
+    else drawLine(ctx, op);
+  });
 }
 
 export function clearCanvas(ctx, k) {
