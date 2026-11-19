@@ -18,6 +18,7 @@ const SAVE_DELAY_MS = 400;
 const SHAPE_NAMES = { circle: 'Rond', square: 'Carré', triangle: 'Triangle', star: 'Étoile', heart: 'Cœur' };
 const SPARKLE_EVERY_PX = 9;  // finger travel between two stars of a rainbow stroke
 const STAR_HUE = 0.13;      // the gold of the stars a shooting-star stroke throws in a plain colour
+const BUBBLE_EVERY_PX = 34; // finger travel between two bubbles flying off a bubble stroke
 const DRIP_MS = 1300;       // how long dripping paint keeps running after the stroke
 const SHAKE_ACCEL = 14;     // m/s² on top of gravity: a real shake, not a phone picked up
 const SHAKE_GAP_MS = 1500;  // one snowfall per shake
@@ -312,6 +313,20 @@ const isRainbow = (op) => op && op.c === RAINBOW;
 const throwsStars = (op) => op && (op.c === RAINBOW || op.k === 'stars');
 const starHue = (op, len) => (op.c === RAINBOW ? len / RAINBOW_LEN : STAR_HUE);
 
+// Soap bubbles flying off a bubble stroke, in its colour there, from the point and its mirror images.
+function hueRgb(h) {
+  const f = (n) => { const k = (n + h * 12) % 12; return Math.round(255 * (0.76 - 0.2112 * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
+  return `${f(0)},${f(8)},${f(4)}`;
+}
+function floatBubble(op, x, y, len) {
+  const n = op.c === RAINBOW ? 0 : parseInt(op.c.slice(1), 16);
+  const tint = op.c === RAINBOW ? hueRgb((((len / RAINBOW_LEN) % 1) + 1) % 1) : `${n >> 16},${(n >> 8) & 255},${n & 255}`;
+  for (const [px, py] of copiesOf(x, y)) {
+    const r = Math.max(8, Math.min(40, op.w * scale() * (0.6 + 0.8 * Math.random())));
+    sparkles.bubble(A.view.ox + px * scale(), A.view.oy + py * scale(), r, tint);
+  }
+}
+
 // Dripping paint runs down for a moment after the stroke, each frame painting longer drops.
 const dripping = new Set();
 function runDrips(op) {
@@ -406,7 +421,7 @@ stage.addEventListener('pointerdown', (e) => {
   if (!pop.hidden) { closePop(); return; }  // a tap beside the menu only closes it
   const [x, y] = toPage(e);
   pen = { id: e.pointerId, cx: e.clientX, cy: e.clientY, lx: e.clientX, ly: e.clientY, x, y, sx: x, sy: y,
-    moved: false, op: null, len: 0, spark: 0 };
+    moved: false, op: null, len: 0, spark: 0, bub: 0 };
   const w = SIZES[tool.size], start = [Math.round(x), Math.round(y)];
   if (tool.kind === 'brush') {
     pen.op = mirrorable({ t: 'line', c: tool.color, w, p: start });
@@ -415,6 +430,7 @@ stage.addEventListener('pointerdown', (e) => {
   else if (tool.kind === 'eraser') pen.op = mirrorable({ t: 'erase', w, p: start });
   else if (tool.kind === 'smudge') pen.op = mirrorable({ t: 'smudge', w, p: start });
   if (throwsStars(pen.op)) sparkleAt(x, y, starHue(pen.op, 0), 3);
+  if (pen.op && pen.op.k === 'bubbles') floatBubble(pen.op, x, y, 0);
   pen.from = 0;
   clearCanvas(live, A.k);
   showLive();
@@ -432,6 +448,10 @@ stage.addEventListener('pointermove', (e) => {
     if (throwsStars(pen.op)) {
       pen.spark += Math.hypot(e.clientX - pen.lx, e.clientY - pen.ly);
       for (; pen.spark >= SPARKLE_EVERY_PX; pen.spark -= SPARKLE_EVERY_PX) sparkleAt(pen.sx, pen.sy, starHue(pen.op, pen.len));
+    }
+    if (pen.op.k === 'bubbles') {
+      pen.bub += Math.hypot(e.clientX - pen.lx, e.clientY - pen.ly);
+      for (; pen.bub >= BUBBLE_EVERY_PX; pen.bub -= BUBBLE_EVERY_PX) floatBubble(pen.op, pen.sx, pen.sy, pen.len);
     }
     pen.lx = e.clientX; pen.ly = e.clientY;
   } else if (tool.kind === 'shape' && pen.moved) {

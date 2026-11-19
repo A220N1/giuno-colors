@@ -1,13 +1,19 @@
-// Little stars that twinkle along a rainbow stroke and fade away, the burst of a firework and snow
-// falling from a shake: animations over the page, not part of the drawing.
+// Little stars that twinkle along a rainbow stroke and fade away, soap bubbles that float up from a
+// bubble stroke and pop, the burst of a firework and snow falling from a shake: animations over the
+// page, not part of the drawing.
 import { drawFlake } from './nature.js';
 
 const LIFE_MS = 750;
 const MAX_STARS = 140;
+const MAX_BUBBLES = 30;
+const BUBBLE_LIFE_MS = [3000, 4000];  // floating, before it pops
+const POP_MS = 260;
+const IRIDESCENT = ['rgba(255,182,214,0.85)', 'rgba(255,241,168,0.85)', 'rgba(168,236,255,0.85)', 'rgba(214,190,255,0.85)'];
 
 export function sparkler(canvas) {
   const ctx = canvas.getContext('2d');
   const stars = [];
+  const bubbles = [];
   const effects = [];  // { t0, dur, draw(age), done() }
   let raf = 0, dpr = 1;
 
@@ -65,6 +71,55 @@ export function sparkler(canvas) {
         });
       },
     });
+  }
+
+  // A soap bubble of radius r (CSS pixels) rising from (x, y), tinted with `tint` ('r,g,b').
+  function bubble(x, y, r, tint) {
+    if (bubbles.length >= MAX_BUBBLES) bubbles.shift();
+    const [a, b] = BUBBLE_LIFE_MS;
+    bubbles.push({
+      x0: x, y0: y, r, tint, t0: performance.now(), life: a + Math.random() * (b - a),
+      rise: 0.05 + Math.random() * 0.04, sway: 6 + Math.random() * 10, freq: 0.0018 + Math.random() * 0.0015,
+      phase: Math.random() * Math.PI * 2, turn: Math.random() * Math.PI * 2,
+    });
+    if (!raf) raf = requestAnimationFrame(frame);
+  }
+
+  function drawBubble(b, x, y, r) {
+    const body = ctx.createRadialGradient(x, y, r * 0.2, x, y, r);
+    body.addColorStop(0, 'rgba(255,255,255,0.04)');
+    body.addColorStop(0.7, `rgba(${b.tint},0.12)`);
+    body.addColorStop(1, `rgba(${b.tint},0.35)`);
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    let rim = `rgba(${b.tint},0.8)`;
+    if (ctx.createConicGradient) {
+      rim = ctx.createConicGradient(b.turn, x, y);
+      [`rgba(${b.tint},0.85)`, ...IRIDESCENT, `rgba(${b.tint},0.85)`].forEach((c, i, all) => rim.addColorStop(i / (all.length - 1), c));
+    }
+    ctx.strokeStyle = rim;
+    ctx.lineWidth = Math.max(1, r * 0.09);
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = Math.max(1, r * 0.12);
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(x, y, r * 0.68, Math.PI * 1.08, Math.PI * 1.38); ctx.stroke();
+  }
+
+  // A popping bubble: its rim opens into a growing ring while droplets fly off.
+  function drawPop(b, x, y, r, t) {
+    ctx.globalAlpha = 1 - t;
+    ctx.strokeStyle = `rgba(${b.tint},0.9)`;
+    ctx.lineWidth = Math.max(1, r * 0.08);
+    ctx.setLineDash([r * 0.5, r * 0.35]);
+    ctx.beginPath(); ctx.arc(x, y, r * (1 + 0.5 * t), 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = `rgba(${b.tint},0.9)`;
+    for (let i = 0; i < 7; i++) {
+      const a = b.turn + i * Math.PI * 2 / 7, d = r * (1 + 1.1 * t);
+      ctx.beginPath(); ctx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, Math.max(1, r * 0.1 * (1 - t)), 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   function resize(w, h) {
@@ -128,6 +183,14 @@ export function sparkler(canvas) {
       star(s, Math.max(0, k));
     }
     ctx.globalAlpha = 1;
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+      const b = bubbles[i], age = now - b.t0;
+      if (age >= b.life + POP_MS) { bubbles.splice(i, 1); continue; }
+      const t = Math.min(age, b.life);
+      const x = b.x0 + Math.sin(b.phase + t * b.freq * Math.PI * 2) * b.sway, y = b.y0 - t * b.rise;
+      const r = b.r * Math.min(1, 0.4 + age / 250);  // blown up quickly
+      if (age < b.life) drawBubble(b, x, y, r); else drawPop(b, x, y, r, (age - b.life) / POP_MS);
+    }
     for (let i = 0; i < effects.length; i++) {
       const fx = effects[i], age = (now - fx.t0) / fx.dur;
       if (age >= 1) {
@@ -137,11 +200,12 @@ export function sparkler(canvas) {
       }
       fx.draw(age);
     }
-    if (stars.length || effects.length) raf = requestAnimationFrame(frame);
+    if (stars.length || bubbles.length || effects.length) raf = requestAnimationFrame(frame);
   }
 
   function clear() {
     stars.length = 0;
+    bubbles.length = 0;
     for (const fx of effects.splice(0)) if (fx.done) fx.done();
     cancelAnimationFrame(raf);
     raf = 0;
@@ -149,5 +213,6 @@ export function sparkler(canvas) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
 
-  return { resize, emit, burst, firework, rain, clear, count: () => stars.length, busy: () => effects.length > 0 };
+  return { resize, emit, burst, bubble, firework, rain, clear, count: () => stars.length, floating: () => bubbles.length,
+    busy: () => effects.length > 0 };
 }
