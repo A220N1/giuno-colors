@@ -1,5 +1,5 @@
 // Start-up with two profiles, then the gallery with some progress already saved.
-import { run, check, clearStorage, frames } from './harness.js';
+import { run, check, note, clearStorage, frames } from './harness.js';
 
 run(async () => {
   await clearStorage();
@@ -7,7 +7,9 @@ run(async () => {
     { id: 'p1', name: 'Alice', color: '#ec6fa5' },
     { id: 'p2', name: 'Zoé', color: '#43a047' },
   ]));
+  let t0 = performance.now();
   const { drawings } = await import('../js/drawings.js');
+  note(`${drawings.length} drawings parsed in ${Math.round(performance.now() - t0)} ms`);
   const first = drawings[0];
   const zones = (first.root.querySelectorAll('[data-c]')).length;
   localStorage.setItem(`giuno.progress.p1.${first.key}`, JSON.stringify([0, 1, 2]));
@@ -23,8 +25,10 @@ run(async () => {
   check(!document.querySelector('#profiles').hidden, 'two profiles: "Qui colorie ?" first');
   const avatars = document.querySelectorAll('#profile-list .avatar');
   check(avatars.length === 3, 'two profiles and the add button');
+  t0 = performance.now();
   avatars[0].click();
   await frames();
+  note(`gallery shown in ${Math.round(performance.now() - t0)} ms`);
 
   check(!document.querySelector('#gallery').hidden, 'gallery after picking a profile');
   check(document.querySelector('#who').textContent.includes('Alice'), 'gallery shows who is colouring');
