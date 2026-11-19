@@ -1,4 +1,4 @@
-"""Bundle the coloring app and its drawings into one self-contained HTML file."""
+"""Build the Giuno Colors site (an installable web app) into a folder ready to publish."""
 import argparse
 import hashlib
 import json
@@ -11,6 +11,7 @@ from pathlib import Path
 SVG_NS = "http://www.w3.org/2000/svg"
 ZONE_TAGS = {"path", "rect", "circle", "ellipse", "polygon"}
 HERE = Path(__file__).resolve().parent
+ICONS = ["icon-192.png", "icon-512.png", "icon-maskable-512.png", "logo.svg"]
 
 
 def load_drawing(path):
@@ -48,22 +49,28 @@ def load_drawing(path):
     return {"id": path.stem, "hash": digest, "svg": text}, len(zones), len(used)
 
 
+def fill_once(files, name, marker, value):
+    text = files[name].decode("utf-8")
+    if text.count(marker) != 1:
+        sys.exit(f"error: {name} must contain {marker} exactly once")
+    files[name] = text.replace(marker, value).encode("utf-8")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--out", type=Path, required=True, help="HTML file to write")
+    ap.add_argument("--out", type=Path, required=True, help="folder to write, new or empty")
     ap.add_argument("--drawings", type=Path, default=HERE / "drawings",
                     help="folder of SVG drawings (default: drawings/ next to this script)")
-    ap.add_argument("--force", action="store_true", help="overwrite --out if it exists")
     args = ap.parse_args()
 
-    if args.out.exists() and not args.force:
-        sys.exit(f"error: {args.out} exists (use --force or another path)")
-    files = sorted(args.drawings.glob("*.svg"))
-    if not files:
+    if args.out.exists() and any(args.out.iterdir()):
+        sys.exit(f"error: {args.out} is not empty")
+    svgs = sorted(args.drawings.glob("*.svg"))
+    if not svgs:
         sys.exit(f"error: no .svg in {args.drawings}")
 
     entries = []
-    for path in files:
+    for path in svgs:
         try:
             entry, n_zones, n_colors = load_drawing(path)
         except (ValueError, ET.ParseError) as e:
@@ -71,18 +78,30 @@ def main():
         entries.append(entry)
         print(f"{path.name}: {n_zones} zones, {n_colors} colours")
 
-    template = (HERE / "app.html").read_text(encoding="utf-8")
-    for marker in ("__DRAWINGS__", "__BUILD__"):
-        if template.count(marker) != 1:
-            sys.exit(f"error: app.html must contain {marker} exactly once")
-    # keep the JSON from closing its <script> element early
-    payload = json.dumps(entries, ensure_ascii=False).replace("</", "<\\/").replace("<!--", "<\\u0021--")
-    stamp = datetime.now().strftime("%d/%m/%Y %H:%M")
-    html = template.replace("__DRAWINGS__", payload).replace("__BUILD__", stamp)
+    files = {}
+    src = HERE / "src"
+    for p in sorted(src.rglob("*")):
+        if p.is_file():
+            files[p.relative_to(src).as_posix()] = p.read_bytes()
+    for name in ICONS:
+        files[f"icons/{name}"] = (HERE / "icons" / name).read_bytes()
+    files["js/drawings-data.js"] = (
+        "export const DRAWINGS = " + json.dumps(entries, ensure_ascii=False) + ";\n").encode("utf-8")
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(html, encoding="utf-8")
-    print(f"{args.out} ({args.out.stat().st_size // 1024} KB)")
+    # the version changes only when some file does, so phones download an update only then
+    digest = hashlib.sha256(b"".join(k.encode() + v for k, v in sorted(files.items()))).hexdigest()[:8]
+    cached = ["./"] + sorted(k for k in files if k != "sw.js")
+    fill_once(files, "index.html", "__BUILD__", f"{datetime.now():%d/%m/%Y %H:%M} ({digest})")
+    fill_once(files, "sw.js", "__VERSION__", digest)
+    fill_once(files, "sw.js", "__FILES__", json.dumps(cached))
+    files[".nojekyll"] = b""  # GitHub Pages: serve the files as they are
+
+    for name, data in files.items():
+        out = args.out / name
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(data)
+    size = sum(len(v) for v in files.values())
+    print(f"{args.out}: {len(files)} files, {size // 1024} KB, version {digest}")
 
 
 if __name__ == "__main__":
