@@ -25,7 +25,7 @@ The build needs Python 3 and nothing else.
 python3 build.py --out site
 ```
 
-This writes the app (HTML, CSS, JavaScript modules, manifest, service worker, icons and drawings) into a new or empty folder. Service workers and installation need HTTPS or `localhost`, so try it through a local server:
+This writes the app (HTML, CSS, JavaScript modules, manifest, service worker, icons and drawings) into a new or empty folder. The version number shown at the bottom of the gallery, with the build date, comes from the `VERSION` file; the service worker's cache name is a hash of the files, so phones only download an update when something changed. Service workers and installation need HTTPS or `localhost`, so try it through a local server:
 
 ```sh
 python3 -m http.server --directory site 8000

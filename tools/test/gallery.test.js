@@ -63,7 +63,7 @@ run(async () => {
   check(shown('gallery') && document.querySelector('#who').textContent.includes('Alice'), 'back to Alice');
   const width = cards[0].querySelector('.bar > i').style.width;
   check(Math.abs(parseFloat(width) - 300 / zones) < 0.01, `saved progress shows on the card (${width})`);
-  check(/Version \d\d\/\d\d\/\d{4}/.test(document.querySelector('#gallery').textContent), 'version shown');
+  check(/Version \d+\.\d+\.\d+ \d\d\/\d\d\/\d{4} \d\dh\d\d/.test(document.querySelector('#gallery').textContent), 'version number and date shown');
 
   // English on request, remembered on the device, then French again
   const firstTitle = () => document.querySelector('#cards .cards .card .meta b').textContent;

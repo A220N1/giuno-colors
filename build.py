@@ -110,10 +110,14 @@ def main():
     files["js/drawings-data.js"] = (
         "export const DRAWINGS = " + json.dumps(entries, ensure_ascii=False) + ";\n").encode("utf-8")
 
-    # the version changes only when some file does, so phones download an update only then
-    digest = hashlib.sha256(b"".join(k.encode() + v for k, v in sorted(files.items()))).hexdigest()[:8]
+    version = (HERE / "VERSION").read_text(encoding="utf-8").strip()
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        sys.exit(f"error: VERSION must be like 1.2.3, not {version!r}")
+
+    # the cache version changes only when some file does, so phones download an update only then
+    digest = hashlib.sha256(version.encode() + b"".join(k.encode() + v for k, v in sorted(files.items()))).hexdigest()[:8]
     cached = ["./"] + sorted(k for k in files if k != "sw.js")
-    fill_once(files, "index.html", "__BUILD__", f"{datetime.now():%d/%m/%Y %H:%M} ({digest})")
+    fill_once(files, "index.html", "__BUILD__", f"{version} {datetime.now():%d/%m/%Y %Hh%M}")
     fill_once(files, "sw.js", "__VERSION__", digest)
     fill_once(files, "sw.js", "__FILES__", json.dumps(cached))
     files[".nojekyll"] = b""  # GitHub Pages: serve the files as they are
@@ -123,7 +127,7 @@ def main():
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(data)
     size = sum(len(v) for v in files.values())
-    print(f"{args.out}: {len(files)} files, {size // 1024} KB, version {digest}")
+    print(f"{args.out}: {len(files)} files, {size // 1024} KB, version {version}, cache {digest}")
 
 
 if __name__ == "__main__":

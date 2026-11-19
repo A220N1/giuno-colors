@@ -317,12 +317,18 @@ run(async () => {
   const Z = draw.debug.state();
   const finger = (type, id, [x, y]) => stage.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch',
     isPrimary: id === 1, clientX: x, clientY: y, bubbles: true, cancelable: true, buttons: type === 'pointerup' ? 0 : 1 }));
+  const zmid = at(400, 500);  // between the two fingers, before zooming
   finger('pointerdown', 1, at(380, 500));
   finger('pointerdown', 2, at(420, 500));
   for (let i = 1; i <= 10; i++) { finger('pointermove', 1, at(380 - 12 * i, 500)); finger('pointermove', 2, at(420 + 12 * i, 500)); }
   finger('pointerup', 2, at(540, 500));
   finger('pointerup', 1, at(260, 500));
   check(Z.view.z > 2.5 && !$('#zoom-fit').hidden && Z.ops.length === 0, `pinch zooms in (x${Z.view.z.toFixed(1)}), nothing drawn`);
+  // the fingers went past the maximum zoom: the point between them must not have slid away
+  const zr = stage.getBoundingClientRect(), zs = Z.s * Z.view.z;
+  const [zmx, zmy] = zmid;
+  const under = [(zmx - zr.left - Z.view.ox) / zs, (zmy - zr.top - Z.view.oy) / zs];
+  check(Math.abs(under[0] - 400) < 2 && Math.abs(under[1] - 500) < 2, `zoomed past the maximum, the page stays under the fingers (${under.map(Math.round).join(', ')})`);
   pickBrush('marker');
   pickColor(BLUE);
   drag(stage, segment(390, 480, 410, 520, 10));
