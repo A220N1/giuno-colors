@@ -1,5 +1,5 @@
 // Start-up with two profiles, then the gallery with some progress already saved.
-import { run, check, note, clearStorage, frames } from './harness.js';
+import { run, check, note, clearStorage, frames, sleep } from './harness.js';
 
 run(async () => {
   await clearStorage();
@@ -142,4 +142,33 @@ run(async () => {
   check((await backup.makeBackup()).pages.length === 1, 'the backup holds the added page');
   await importer.forgetPage(page.id);
   check(!drawings.includes(page) && (await allPages()).length === 0, 'the added page removed');
+
+  // fluidity meter: off by default; once on, it times a drag and the heavy steps, and reports them
+  const hud = document.querySelector('#perf');
+  check(hud.hidden && !document.querySelector('#perf-on').hidden && document.querySelector('#perf-share').hidden,
+    'fluidity meter off by default');
+  const perf = await import('../js/perf.js');
+  document.querySelector('#perf-on').click();
+  check(!hud.hidden && localStorage.getItem('giuno.perf') === 'true', 'fluidity meter on, remembered');
+  route();
+  await settle();
+  document.querySelector('#cards .cards .card').click();
+  await settle();
+  const stage = document.querySelector('#stage'), sr = stage.getBoundingClientRect();
+  const fire = (type, x, y) => stage.dispatchEvent(new PointerEvent(type, { pointerId: 1, pointerType: 'touch', isPrimary: true,
+    clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0, buttons: type === 'pointerup' ? 0 : 1 }));
+  const cx = sr.left + sr.width / 2, cy = sr.top + sr.height / 2;
+  fire('pointerdown', cx, cy);
+  for (let i = 1; i <= 12; i++) { await frames(1); fire('pointermove', cx + 4 * i, cy); }
+  fire('pointerup', cx + 48, cy);
+  await sleep(700);
+  const text = perf.perfReport();
+  check(text.includes(`coloriage ${drawings[0].id}, un doigt : 1 ;`) && text.includes(`ouverture du coloriage ${drawings[0].id} : 1 ;`)
+    && text.includes(`numéros ${drawings[0].id} : 1 ;`), 'the drag and the opening are in the report');
+  check(/i\/s/.test(hud.textContent) && /lâcher/.test(hud.textContent), `the meter shows the drag (${hud.textContent.split('\n')[1]})`);
+  note(text);
+  document.querySelector('#back').click();
+  await settle();
+  document.querySelector('#perf-off').click();
+  check(hud.hidden && localStorage.getItem('giuno.perf') === 'false', 'fluidity meter off again');
 });

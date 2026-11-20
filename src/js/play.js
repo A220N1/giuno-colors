@@ -4,6 +4,7 @@ import { instantiate, paint, analyse } from './drawings.js';
 import { getProgress, setProgress } from './store.js';
 import { shareDrawing } from './share.js';
 import { t } from './i18n.js';
+import { perfScene, perfStart, perfStop, timed } from './perf.js';
 
 const LABEL_MIN_PX = 9;    // numbers smaller than this on screen are hidden until zoomed in
 const TAP_SLOP_PX = 10;    // finger movement still counted as a tap
@@ -21,9 +22,11 @@ const stage = $('#stage');
 let P = null;           // the drawing being coloured
 let onBack = () => {};
 let onFree = () => {};
+perfScene('play', () => (P ? P.d.id : ''));
 
 // `free`: opens the drawing as a page to paint freely.
 export function openPlay(d, profileId, back, free = () => {}) {
+  const t0 = perfStart();
   onBack = back;
   onFree = free;
   stopConfetti();
@@ -51,7 +54,7 @@ export function openPlay(d, profileId, back, free = () => {}) {
   buildPalette();  // before measuring: its rows take height from the drawing area
   measureStage();
   fitView();
-  P.info = analyse(d, g, zones);
+  P.info = timed(`numéros ${d.id}`, () => analyse(d, g, zones));
   // a zone nobody can see or touch would keep the drawing from ever being finished
   const minR = AUTO_FILL_PX / (P.fit * MAX_ZOOM);
   let auto = 0;
@@ -66,6 +69,7 @@ export function openPlay(d, profileId, back, free = () => {}) {
   updateProgress();
   const first = nextColor(-1);
   if (first >= 0) selectColor(first); else finish(false);
+  perfStop(`ouverture du coloriage ${d.id}`, t0);
 }
 
 export function leavePlay() {

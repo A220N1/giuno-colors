@@ -37,9 +37,11 @@
     <p class="note" data-t>Un coloriage à numéros au format SVG peut être ajouté depuis un fichier. Il reste sur ce téléphone. Appui long sur sa carte pour le retirer.</p>
     <div class="row start"><button id="page-import" class="pill plain" data-t>Ajouter un coloriage</button></div>
     <input id="page-file" type="file" accept=".svg,image/svg+xml" multiple hidden>
+    <p class="note" data-t>La mesure de fluidité montre en haut de l'écran si les gestes restent fluides et combien de temps prennent les étapes lourdes. Les mesures s'effacent en fermant l'appli.</p>
+    <div class="row start"><button id="perf-on" class="pill plain" data-t>Mesurer la fluidité</button><button id="perf-off" class="pill plain" hidden data-t>Arrêter la mesure</button><button id="perf-share" class="pill plain" hidden data-t>Partager les mesures</button></div>
   </section>
   <p id="storage-note" class="note" hidden data-t>Ce navigateur ne garde pas la progression : elle sera perdue en fermant la page.</p>
-  <p class="note"><span data-t>Version</span> __BUILD__<br><a href="https://github.com/A220N1/giuno-colors" target="_blank" rel="noopener" data-t>Code source</a> <span data-t>sous licence GPL-3.0, dessins sous licence CC BY-SA 4.0.</span> <span data-t>Emojis des scènes :</span> <a href="https://openmoji.org" target="_blank" rel="noopener">OpenMoji</a><span data-t>, licence CC BY-SA 4.0.</span></p>
+  <p class="note"><span data-t>Version</span> <span id="build">__BUILD__</span><br><a href="https://github.com/A220N1/giuno-colors" target="_blank" rel="noopener" data-t>Code source</a> <span data-t>sous licence GPL-3.0, dessins sous licence CC BY-SA 4.0.</span> <span data-t>Emojis des scènes :</span> <a href="https://openmoji.org" target="_blank" rel="noopener">OpenMoji</a><span data-t>, licence CC BY-SA 4.0.</span></p>
 </section>
 
 <section id="play" class="screen" hidden>
@@ -117,6 +119,7 @@
 </div>
 
 <div id="toast" class="toast" hidden></div>
+<div id="perf" class="perf" hidden></div>
 <canvas id="confetti" hidden></canvas>
 </body>
 </html>

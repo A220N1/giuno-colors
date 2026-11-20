@@ -88,6 +88,11 @@ const EN = {
   'Pas un coloriage à numéros : {names}': 'Not a color-by-number page: {names}',
   'Retirer « {title} » de ce téléphone ?': 'Remove "{title}" from this phone?',
   'Retirer': 'Remove',
+  "La mesure de fluidité montre en haut de l'écran si les gestes restent fluides et combien de temps prennent les étapes lourdes. Les mesures s'effacent en fermant l'appli.":
+    'The fluidity meter shows at the top of the screen whether gestures stay smooth and how long the heavy steps take. The measurements are lost when the app is closed.',
+  'Mesurer la fluidité': 'Measure fluidity',
+  'Arrêter la mesure': 'Stop measuring',
+  'Partager les mesures': 'Share the measurements',
   'Peindre librement ce dessin': 'Paint this drawing freely',
   'Feutre': 'Felt pen',
   'Stylo': 'Pen',
