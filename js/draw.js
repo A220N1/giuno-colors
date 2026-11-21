@@ -9,6 +9,7 @@ import { sparkler } from './sparkles.js';
 import { STAMPS, stampUrl, isAnimal, isNature, prepareArt, preloadStamps } from './images.js';
 import { isFirework, flakesOf } from './nature.js';
 import { t } from './i18n.js';
+import { perfScene, perfStart, perfStop, count } from './perf.js';
 
 const TAP_SLOP_PX = 10;     // finger movement still counted as a tap
 const MIN_STEP = 2;         // page units between two kept points of a line
@@ -46,6 +47,8 @@ const tool = { kind: 'brush', brush: 'marker', color: COLORS[0], size: 1, shape:
 let A = null;  // the drawing on screen
 let pen = null;
 let onBack = () => {};
+const opsInfo = () => `${count(A.ops.length, 'opération')}${tool.mirror > 1 ? `, miroir ${tool.mirror}` : ''}`;
+perfScene('draw', () => (tool.kind === 'brush' ? tool.brush : tool.kind) + (tool.mirror > 1 ? ` miroir ${tool.mirror}` : ''));
 
 // `baseId`: a colouring page to paint freely, for a new drawing.
 export async function openDraw(id, profileId, goBack, baseId = '') {
@@ -124,6 +127,7 @@ function applyView() {
 const scale = () => A.s * A.view.z;
 
 function renderAll() {
+  const t0 = perfStart();
   stopDrips();  // everything is drawn whole below, drops at full length
   const bg = backgroundOf(A.ops);
   A.paper = paperColor(bg);
@@ -132,6 +136,7 @@ function renderAll() {
   renderLayers(fills, lines, A.ops, A.k);
   drawBase(baseLayer, A.base, A.k);
   clearCanvas(live, A.k);
+  perfStop('redessin complet', t0, () => count(A.ops.length, 'opération'));
 }
 
 // One more operation on screen: a background redraws its layer, the rest draws on top.
@@ -496,8 +501,9 @@ function penUp(e) {
   } else if (tool.kind === 'bucket' && !g.moved) {
     // with a mirror, the mirror images of the tap fill too, in one operation (nonzero rule: two taps
     // in the same area add up instead of cancelling out)
-    const loops = [];
+    const loops = [], t0 = perfStart();
     for (const [px, py] of copiesOf(g.x, g.y)) loops.push(...(fillRegion(A.ops, px, py, A.base) || []));
+    perfStop('seau', t0, opsInfo);
     if (loops.length) {
       commit(tool.mirror > 1 ? { t: 'fill', c: tool.color, r: loops, z: 1 } : { t: 'fill', c: tool.color, r: loops });
       vibrate(12);

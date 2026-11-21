@@ -7,12 +7,14 @@ import { listArt, newArtId } from './artstore.js';
 import { renderFlat } from './art.js';
 import { prepareArt } from './images.js';
 import { t, titleOf, categoryOf } from './i18n.js';
+import { perfStart, perfStop, count } from './perf.js';
 
 const LEVELS = ['', 'Facile', 'Moyen', 'Difficile'];
 
 let shown = null;  // the latest gallery, so a slow drawing list does not land in a newer one
 
 export function showGallery(profile, onOpen, onWho, onArt) {
+  const t0 = perfStart();
   showScreen('gallery');
   const who = $('#who');
   who.replaceChildren(face(profile), el('span', null, profile.name));
@@ -29,6 +31,7 @@ export function showGallery(profile, onOpen, onWho, onArt) {
   const token = shown = {};
   listArt(profile.id).then(async (records) => {
     if (shown !== token) return;
+    const t1 = perfStart();
     for (const r of records) {
       const card = el('button', 'card art-card');
       card.addEventListener('click', () => onArt(r.id));
@@ -43,6 +46,7 @@ export function showGallery(profile, onOpen, onWho, onArt) {
         console.error('thumbnail not drawn:', e);  // one drawing must not stop the gallery
       }
     }
+    perfStop('vignettes des dessins libres', t1, count(records.length, 'dessin'));
   }).catch((e) => console.error('drawings not listed:', e));
 
   let category = null, cards = null;
@@ -80,4 +84,5 @@ export function showGallery(profile, onOpen, onWho, onArt) {
     cards.append(card);
   }
   $('#storage-note').hidden = storageOk();
+  perfStop('galerie', t0, count(drawings.length, 'coloriage'));
 }

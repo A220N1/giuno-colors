@@ -48,6 +48,10 @@ export function setCurrent(id) { write('current', id); }
 export const getLang = () => (read('lang', 'fr') === 'en' ? 'en' : 'fr');
 export const setLang = (lang) => write('lang', lang);
 
+// The fluidity meter of the grown-ups' corner, on or off on this device.
+export const getPerf = () => read('perf', false) === true;
+export const setPerf = (on) => write('perf', on);
+
 export function addProfile(name, fields) {
   const p = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, ...fields };
   write('profiles', [...profiles(), p]);

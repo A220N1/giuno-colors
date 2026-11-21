@@ -191,4 +191,5 @@ canvas.thumb { aspect-ratio: 4 / 5; }
 .icon.lock.holding svg.hold { stroke-dashoffset: 0; transition: stroke-dashoffset 1.2s linear; }
 .icon.lock.nudge { animation: wiggle .5s ease-in-out; }
 .locked .exit { display: none !important; }
+.perf { position: fixed; left: 50%; top: calc(58px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 30; max-width: calc(100% - 16px); overflow: hidden; text-overflow: ellipsis; padding: 3px 8px; border-radius: 8px; background: rgba(20, 20, 20, .78); color: #fff; font: 11px/1.35 ui-monospace, monospace; white-space: pre; pointer-events: none; }
 .toast { position: fixed; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 20; max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 16px; background: rgba(40, 40, 40, .88); color: #fff; font-size: 15px; text-align: center; pointer-events: none; }
