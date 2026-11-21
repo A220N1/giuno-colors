@@ -16,6 +16,7 @@ const AUTO_FILL_PX = 6;    // a zone still narrower than this at full zoom, or h
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const CHECKER_PX = 5;      // squares of the checkerboard on the zones left in the chosen colour, on screen
 const CHECKER_GREY = '#d4d4d4';
+const STILL_MS = 250;      // fingers resting this long on a moved view: it is drawn sharp again
 
 export const testing = { instant: false };  // tests skip the zoom animation
 const stage = $('#stage');
@@ -45,6 +46,7 @@ export function openPlay(d, profileId, back, free = () => {}) {
     d, profileId, svg, world, art: g, zones, colors, labels, marks,
     filled: new Set(getProgress(profileId, d.key).filter((i) => i < zones.length)),
     sel: -1, s: 1, tx: 0, ty: 0, fit: 1, W: 0, H: 0, left0: 0, top0: 0, anim: 0,
+    drawn: { s: 0, tx: 0, ty: 0 }, still: 0,  // the view the drawing was last drawn at
   };
   zones.forEach((z, i) => {
     z.setAttribute('data-i', i);
@@ -75,6 +77,7 @@ export function openPlay(d, profileId, back, free = () => {}) {
 export function leavePlay() {
   if (!P) return;
   cancelAnimationFrame(P.anim);
+  clearTimeout(P.still);
   P = null;
   stopConfetti();
   $('#find').classList.remove('hint');
@@ -89,19 +92,35 @@ function measureStage() {
 function fitView() {
   const [vx, vy, vw, vh] = P.d.vb;
   P.fit = Math.min(P.W / vw, P.H / vh) * 0.96;
-  P.s = 0;
   setView(P.fit, (P.W - vw * P.fit) / 2 - vx * P.fit, (P.H - vh * P.fit) / 2 - vy * P.fit);
 }
 
-function setView(s, tx, ty) {
+// A view the fingers are moving (`moving`) only moves and stretches the drawing as last drawn, with a
+// CSS transform: drawing it again at each frame, with its numbers and checkerboard, made zooming slow
+// on phones. It is drawn again, sharp, once the fingers lift or rest.
+function setView(s, tx, ty, moving = false) {
   const [vx, vy, vw, vh] = P.d.vb;
   s = clamp(s, P.fit, P.fit * MAX_ZOOM);
   // keep the middle of the screen over the drawing, centre it when it is smaller than the screen
   tx = vw * s <= P.W ? (P.W - vw * s) / 2 - vx * s : clamp(tx, P.W / 2 - (vx + vw) * s, P.W / 2 - vx * s);
   ty = vh * s <= P.H ? (P.H - vh * s) / 2 - vy * s : clamp(ty, P.H / 2 - (vy + vh) * s, P.H / 2 - vy * s);
-  const zoomed = s !== P.s;
   P.s = s; P.tx = tx; P.ty = ty;
-  P.world.setAttribute('transform', `matrix(${s} 0 0 ${s} ${tx} ${ty})`);
+  clearTimeout(P.still);
+  if (!moving) { drawView(); return; }
+  const d = P.drawn, r = s / d.s;
+  P.svg.style.transform = `translate(${tx - r * d.tx}px, ${ty - r * d.ty}px) scale(${r})`;
+  P.still = setTimeout(drawView, STILL_MS);
+}
+
+function drawView() {
+  if (!P) return;
+  clearTimeout(P.still);
+  P.svg.style.transform = '';
+  const d = P.drawn;
+  if (P.s === d.s && P.tx === d.tx && P.ty === d.ty) return;
+  const zoomed = P.s !== d.s;
+  P.drawn = { s: P.s, tx: P.tx, ty: P.ty };
+  P.world.setAttribute('transform', `matrix(${P.s} 0 0 ${P.s} ${P.tx} ${P.ty})`);
   if (zoomed) { updateLabelVisibility(); sizeCheckers(); }
   scheduleFindHint();
 }
@@ -338,7 +357,7 @@ function animateView(s1, tx1, ty1, done) {
     if (!P) return;
     const t = Math.min(1, (now - t0) / dur);
     const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
-    setView(s0 + (s1 - s0) * e, tx0 + (tx1 - tx0) * e, ty0 + (ty1 - ty0) * e);
+    setView(s0 + (s1 - s0) * e, tx0 + (tx1 - tx0) * e, ty0 + (ty1 - ty0) * e, t < 1);
     if (t < 1) P.anim = requestAnimationFrame(step); else if (done) done();
   };
   P.anim = requestAnimationFrame(step);
@@ -380,13 +399,13 @@ stage.addEventListener('pointermove', (e) => {
       gest.tap = false;
       clearTimeout(gest.timer);
     }
-    if (!gest.tap) setView(P.s, P.tx + e.clientX - gest.lx, P.ty + e.clientY - gest.ly);
+    if (!gest.tap) setView(P.s, P.tx + e.clientX - gest.lx, P.ty + e.clientY - gest.ly, true);
     gest.lx = e.clientX; gest.ly = e.clientY;
   } else if (gest.pinch) {
     const [a, b] = [...pointers.values()];
     const s = clamp(gest.pinch.s0 * Math.hypot(a.x - b.x, a.y - b.y) / gest.pinch.d0, P.fit, P.fit * MAX_ZOOM);
     const mx = (a.x + b.x) / 2 - P.left0, my = (a.y + b.y) / 2 - P.top0;
-    setView(s, mx - gest.pinch.wx * s, my - gest.pinch.wy * s);
+    setView(s, mx - gest.pinch.wx * s, my - gest.pinch.wy * s, true);
   }
 });
 
@@ -396,6 +415,7 @@ function pointerEnd(e) {
   if (!P || !gest) return;
   clearTimeout(gest.timer);
   if (pointers.size === 0) {
+    drawView();
     if (gest.tap && e.type === 'pointerup' && e.timeStamp - gest.t0 < 700) tapAt(e.clientX, e.clientY);
     gest = null;
   } else if (pointers.size === 1) {
@@ -415,7 +435,7 @@ stage.addEventListener('wheel', (e) => {
   const s = clamp(P.s * Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)), P.fit, P.fit * MAX_ZOOM);
   const mx = e.clientX - P.left0, my = e.clientY - P.top0;
   const wx = (mx - P.tx) / P.s, wy = (my - P.ty) / P.s;
-  setView(s, mx - wx * s, my - wy * s);
+  setView(s, mx - wx * s, my - wy * s, true);  // drawn again when the wheel rests
 }, { passive: false });
 
 // The drawing area changes size when the browser bars show or hide, or the phone turns:

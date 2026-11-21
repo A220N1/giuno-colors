@@ -1,5 +1,5 @@
 // Colouring screen: every drawing coloured to the end with simulated taps, at the window size run.py picked.
-import { run, check, note, clearStorage, go, tap, hold } from './harness.js';
+import { run, check, note, clearStorage, go, tap, hold, sleep } from './harness.js';
 
 run(async () => {
   await clearStorage();
@@ -43,6 +43,33 @@ run(async () => {
       const w0 = parseFloat(pat.getAttribute('width'));
       play.debug.setView(P.s * 2, P.tx, P.ty);
       check(Math.abs(parseFloat(pat.getAttribute('width')) - w0 / 2) < w0 * 0.01, `${d.id}: checkerboard keeps its size on screen when zooming`);
+
+      // fingers only move and stretch the drawing as a picture; it is drawn again when they lift or rest
+      const fire = (type, x, y, id = 1) => stage.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch',
+        isPrimary: id === 1, clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0, buttons: type === 'pointerup' ? 0 : 1 }));
+      const cx = sr.left + sr.width / 2, cy = sr.top + sr.height / 2;
+      const drawnAt = () => P.world.getAttribute('transform');
+      let before = drawnAt();
+      const tx0 = P.tx, ty0 = P.ty, w1 = parseFloat(pat.getAttribute('width'));
+      fire('pointerdown', cx, cy);
+      fire('pointermove', cx + 30, cy + 20);
+      fire('pointermove', cx + 60, cy + 40);
+      check(drawnAt() === before && /translate/.test(P.svg.style.transform), `${d.id}: a drag moves the drawing as a picture`);
+      fire('pointerup', cx + 60, cy + 40);
+      check(!P.svg.style.transform && (P.tx !== tx0 || P.ty !== ty0)
+        && drawnAt() === `matrix(${P.s} 0 0 ${P.s} ${P.tx} ${P.ty})`, `${d.id}: drawn again where the finger left it`);
+      before = drawnAt();
+      const s1 = P.s;
+      fire('pointerdown', cx - 50, cy);
+      fire('pointerdown', cx + 50, cy, 2);
+      fire('pointermove', cx + 100, cy, 2);
+      check(drawnAt() === before && /scale/.test(P.svg.style.transform) && parseFloat(pat.getAttribute('width')) === w1,
+        `${d.id}: a pinch stretches the drawing without drawing it again`);
+      await sleep(400);
+      check(!P.svg.style.transform && drawnAt() !== before && Math.abs(P.s / s1 - 1.5) < 0.01
+        && Math.abs(parseFloat(pat.getAttribute('width')) - w1 / 1.5) < w1 * 0.01, `${d.id}: fingers at rest, drawn again with its checkerboard`);
+      fire('pointerup', cx + 100, cy, 2);
+      fire('pointerup', cx - 50, cy);
       play.debug.setView(P.fit, 0, 0);
     }
 
