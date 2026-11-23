@@ -2,7 +2,7 @@
 import { $, el, showScreen, vibrate, inkFor, confirmDialog } from './util.js';
 import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, MIRRORS, BRUSHES, BRUSH_NAMES, PIECEWISE, BACKGROUNDS, BG_NAMES, BG_CLOSE_UP,
   backgroundOf, sameBackground, paperColor, drawBackground, drawBase, mirrorPoints, smudgeOp, drawOp, drawPreview, drawDripping, renderLayers, renderFlat,
-  clearCanvas, clearLayers, fillRegion, STENCILS, STENCIL_BOX } from './art.js';
+  clearCanvas, clearLayers, fillRegion, STENCILS, STENCIL_BOX, SCRATCH_COAT, scratchPaint } from './art.js';
 import { getArt, putArt, deleteArt } from './artstore.js';
 import { sharePng, canvasPng } from './share.js';
 import { sparkler } from './sparkles.js';
@@ -11,6 +11,7 @@ import { isFirework, flakesOf } from './nature.js';
 import { BRICKS, PIECES, STUD, PLATE, BASE, MODELS, drawPiece, drawModel, snapBrick, brickBox, brickAt, liveBricks, removedOps,
   modelOf, modelLeft } from './bricks.js';
 import { sfx, rubStart, rubMove, rubStop } from './sound.js';
+import { toast } from './lock.js';
 import { t } from './i18n.js';
 import { perfScene, perfStart, perfStop, count } from './perf.js';
 
@@ -28,7 +29,7 @@ const SHAKE_ACCEL = 14;     // m/s² on top of gravity: a real shake, not a phon
 const SHAKE_GAP_MS = 1500;  // one snowfall per shake
 const FLAKES = 70;          // flakes a shake lets fall
 const MIRROR_NAMES = { 1: 'Sans miroir', 2: 'Miroir gauche-droite', 4: 'Miroir en quatre', 6: 'Kaléidoscope' };
-const BAR_PX = [1.5, 2.5, 4, 5.5, 7.5];  // the sizes as bars on the thickness button
+const DOT_PX = [6, 11, 17, 24, 32];  // the line sizes as dots in the brush and eraser menus
 const STAMP_SIZES = [80, 130, 190, 260, 340];  // side of a sticker dropped by a tap, by size
 const STAMP_MIN = 30;  // a drag smaller than this drops a sticker of the chosen size instead
 const LIFT_PX = 26;    // a sticker being sized, or a brick being placed, shows this far above the finger
@@ -62,7 +63,7 @@ export async function openDraw(id, profileId, goBack, baseId = '') {
   showScreen('draw');
   closePop();
   const a = { id, profileId, ops: [], redo: [], created: Date.now(), saved: false, dirty: false, loading: true,
-    s: 1, k: 1, W: 0, H: 0, timer: 0, baseId, base: null, paper: '#ffffff', replay: null };
+    s: 1, k: 1, W: 0, H: 0, timer: 0, baseId, base: null, paper: '#ffffff', replay: null, memo: {}, keep: {} };
   A = a;
   layout();
   updateTools();
@@ -139,11 +140,13 @@ function renderAll() {
   stopDrips();  // everything is drawn whole below, drops at full length
   const bg = backgroundOf(A.ops);
   A.paper = paperColor(bg);
-  drawBackground(back, bg, A.k);
+  A.card = A.paper === 'scratch';  // a scratch card: the brush scratches, the eraser lays the coat again
+  $('#draw-colors').classList.toggle('off', A.card && (tool.kind === 'brush' || tool.kind === 'eraser'));
+  drawBackground(back, bg, A.k, A.keep);
   const model = modelOf(A.ops);
   if (model) drawModel(back, model, modelLeft(A.ops, model));  // what is left to build, pale, under the bricks
   updateBgButton(bg);
-  renderLayers(fills, lines, A.ops, A.k);
+  renderLayers(fills, lines, A.ops, A.k, A.lift, A.memo);
   drawBase(baseLayer, A.base, A.k);
   clearCanvas(live, A.k);
   perfStop('redessin complet', t0, () => count(A.ops.length, 'opération'));
@@ -239,6 +242,7 @@ function pinchState() {
 
 function startPinch() {
   if (pen) { clearTimeout(pen.hold); pen = null; rubStop(); clearLive(); }
+  A.lift = null;
   closePop();
   pinch = { ...pinchState(), v0: { ...A.view }, v: { ...A.view } };
 }
@@ -360,8 +364,8 @@ function addPoint(x, y) {
 
 const isRainbow = (op) => op && op.c === RAINBOW;
 // Strokes that throw stars while drawn, and the hue of their stars at a length along them.
-const throwsStars = (op) => op && (op.c === RAINBOW || op.k === 'stars');
-const starHue = (op, len) => (op.c === RAINBOW ? len / RAINBOW_LEN : STAR_HUE);
+const throwsStars = (op) => op && (op.c === RAINBOW || op.k === 'stars' || (op.t === 'erase' && A.card));
+const starHue = (op, len) => (op.c === RAINBOW || op.t === 'erase' ? len / RAINBOW_LEN : STAR_HUE);
 
 // Soap bubbles flying off a bubble stroke, in its colour there, from the point and its mirror images.
 function hueRgb(h) {
@@ -480,10 +484,12 @@ stage.addEventListener('pointerdown', (e) => {
   pen = { id: e.pointerId, cx: e.clientX, cy: e.clientY, lx: e.clientX, ly: e.clientY, x, y, sx: x, sy: y,
     moved: false, op: null, len: 0, spark: 0, bub: 0 };
   const w = SIZES[tool.size], start = [Math.round(x), Math.round(y)];
-  if (tool.kind === 'brush') {
+  if (tool.kind === 'brush' && A.card) pen.op = mirrorable({ t: 'erase', w, p: start });
+  else if (tool.kind === 'brush') {
     pen.op = mirrorable({ t: 'line', c: tool.color, w, p: start });
     if (tool.brush !== 'marker') pen.op.k = tool.brush;
   }
+  else if (tool.kind === 'eraser' && A.card) pen.op = mirrorable({ t: 'line', c: SCRATCH_COAT, w, p: start });
   else if (tool.kind === 'eraser') pen.op = mirrorable({ t: 'erase', w, p: start });
   else if (tool.kind === 'smudge') pen.op = mirrorable({ t: 'smudge', w, p: start });
   else if (tool.kind === 'brick') {
@@ -495,9 +501,11 @@ stage.addEventListener('pointerdown', (e) => {
       const i = brickAt(A.ops, p.x, p.y);
       if (i < 0) return;
       p.pick = i;
-      p.op = brickOp(e, A.ops[i].k, A.ops[i].c);
-      vibrate(25);
-      sfx('unclick');
+      A.lift = A.ops[i];  // it leaves the page and follows the finger, with its shadow
+      renderAll();
+      p.op = { ...brickOp(e, A.ops[i].k, A.ops[i].c), lift: true };
+      vibrate(40);
+      sfx('pick');
       showLive();
     }, PICK_MS);
   }
@@ -535,7 +543,7 @@ stage.addEventListener('pointermove', (e) => {
     const b = stampBox(pen.x, pen.y, ...toPage(e), liftOf(e));
     pen.op = b ? mirrorable(stampOp(b)) : null;
   } else if (tool.kind === 'brick') {
-    pen.op = pen.pick != null ? brickOp(e, A.ops[pen.pick].k, A.ops[pen.pick].c) : brickOp(e);
+    pen.op = pen.pick != null ? { ...brickOp(e, A.ops[pen.pick].k, A.ops[pen.pick].c), lift: true } : brickOp(e);
   }
   showLive();
 });
@@ -550,6 +558,9 @@ function penUp(e) {
   rubStop();
   if (!A) return;
   clearLive();
+  const carried = A.lift;
+  A.lift = null;
+  if (carried && e.type !== 'pointerup') { renderAll(); return; }  // the gesture was taken away: the brick goes back
   const [x, y] = toPage(e);
   if (g.op && g.op.p) {
     // a tap of the eraser on a brick takes the whole brick away
@@ -661,20 +672,11 @@ function stampIcon(k) {
   return img;
 }
 
-// The sticker in use on a little sticker with a corner peeling off: the button of the sticker tool.
-function stickerBadge(k) {
-  const badge = el('span', 'sticker-badge');
-  badge.innerHTML = '<svg viewBox="0 0 40 40"><path class="sheet" d="M9 3h22a6 6 0 0 1 6 6v15L24 37H9a6 6 0 0 1-6-6V9a6 6 0 0 1 6-6z"/>'
-    + '<path class="peel" d="M37 24h-7a6 6 0 0 0-6 6v7z"/></svg>';
-  badge.append(stampIcon(k));
-  return badge;
-}
-
-// A stencil as a sheet with its shape cut out; without a shape, the sheet alone, crossed out.
-function stencilIcon(k) {
-  const hole = STENCILS[k] || '';
-  return `<svg viewBox="-0.2 -0.2 1.4 1.4" class="shape stencil"><path d="M-.12 -.12H1.12V1.12H-.12Z${hole}"/>${hole ? '' : '<path d="M.15 .85L.85 .15"/>'}</svg>`;
-}
+// A stencil as its button: the shape with a dashed edge, coloured inside, as paint stays inside it.
+const stencilIcon = (k) => `<svg viewBox="-0.12 -0.12 1.24 1.24" class="stencil"><defs><clipPath id="stencil-${k}"><path d="${STENCILS[k]}"/></clipPath></defs>`
+  + `<g clip-path="url(#stencil-${k})"><path stroke="#ff8fb1" d="M-.2 .12L1.2 -.08"/><path stroke="#ffd84d" d="M-.2 .42L1.2 .22"/>`
+  + `<path stroke="#7cc8f5" d="M-.2 .72L1.2 .52"/><path stroke="#b79cf0" d="M-.2 1.02L1.2 .82"/></g><path class="edge" d="${STENCILS[k]}"/></svg>`;
+const NO_STENCIL = '<svg viewBox="0 0 24 24" class="remove"><circle cx="12" cy="12" r="9"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7"/></svg>';
 
 const PLATE_ICON = '<svg viewBox="0 0 24 24" class="scenery"><path d="M5 12h4v3H5zM10 12h4v3h-4zM15 12h4v3h-4z" fill="#3f9a4f"/>'
   + '<rect x="2" y="15" width="20" height="4" rx="1" fill="#4aa35a"/></svg>';
@@ -735,8 +737,40 @@ function bgSample(bg, w, h) {
   c.width = Math.round(w * dpr);
   c.height = Math.round(h * dpr);
   c.className = 'sample bg';
-  drawBackground(c.getContext('2d'), bg, c.width / (BG_CLOSE_UP.has(bg ? bg.k : 'paper') ? 280 : PAGE_W));
+  const ctx = c.getContext('2d');
+  drawBackground(ctx, bg, c.width / (BG_CLOSE_UP.has(bg ? bg.k : 'paper') ? 280 : PAGE_W));
+  if (bg && bg.k === 'scratch') {  // as the page looks: black, with a few scratches showing the colours
+    ctx.fillStyle = SCRATCH_COAT;
+    ctx.fillRect(0, 0, PAGE_W, PAGE_H);
+    ctx.strokeStyle = scratchPaint(ctx);
+    ctx.lineWidth = 80;
+    ctx.lineCap = ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(130, 260); ctx.lineTo(660, 170); ctx.lineTo(160, 520); ctx.lineTo(650, 470); ctx.lineTo(200, 800); ctx.lineTo(620, 770);
+    ctx.stroke();
+  }
   return c;
+}
+
+// A scratch card just laid: a word of what to do, and a scratch that draws itself across the page
+// and fades, showing the colours hidden under the black.
+function scratchHint() {
+  toast(t('Gratte avec ton doigt : des couleurs se cachent dessous'));
+  const a = A;
+  const pts = Array.from({ length: 46 }, (_, i) => [170 + i * 10, 500 + 90 * Math.sin(i / 5)]);
+  sparkles.effect(1900, (age, ctx) => {
+    if (A !== a || !a.card) return;
+    ctx.translate(a.view.ox, a.view.oy);
+    ctx.scale(scale(), scale());
+    ctx.globalAlpha = age < 0.7 ? 1 : (1 - age) / 0.3;
+    ctx.strokeStyle = scratchPaint(ctx);
+    ctx.lineWidth = 34;
+    ctx.lineCap = ctx.lineJoin = 'round';
+    ctx.beginPath();
+    const n = Math.max(2, Math.round(pts.length * Math.min(1, age / 0.55)));
+    pts.slice(0, n).forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.stroke();
+  });
 }
 
 const bgKey = (bg) => bg ? bg.k + (bg.c || '') : 'paper#ffffff';
@@ -794,24 +828,20 @@ function inColour(e) {
   return e;
 }
 
-// The thickness button: bars from thin to thick, the one in use in the colour in use, so it reads as
-// a choice of thickness and not as one more round tool.
-function sizeBars() {
-  const bars = el('span', 'size-bars');
-  BAR_PX.forEach((h, i) => {
-    const bar = el('i', i === tool.size ? 'on' : null);
-    bar.style.height = h + 'px';
-    bars.append(i === tool.size ? inColour(bar) : bar);
+// The line sizes as a row of dots in the colour in use, in the brush and eraser menus.
+function sizesRow() {
+  const row = el('div', 'sizes');
+  SIZES.forEach((w, i) => {
+    const b = el('button', 'tool' + (i === tool.size ? ' sel' : ''));
+    const dot = inColour(el('span', 'size-dot'));
+    dot.style.width = dot.style.height = DOT_PX[i] + 'px';
+    b.append(dot);
+    b.dataset.size = i;
+    b.setAttribute('aria-label', t('Épaisseur {n}', { n: i + 1 }));
+    b.addEventListener('click', () => { tool.size = i; closePop(); updateTools(); });
+    row.append(b);
   });
-  return bars;
-}
-
-// A thickness in the menu: a stroke as thick as it will be drawn on the screen at this zoom.
-function sizeLine(i) {
-  const px = Math.max(2, Math.min(36, SIZES[i] * (A ? scale() : 0.5)));
-  const line = inColour(el('span', 'size-line'));
-  line.style.height = px.toFixed(1) + 'px';
-  return line;
+  return row;
 }
 
 // A personal sticker may have been removed since it was picked.
@@ -828,17 +858,13 @@ function updateTools() {
   const shapeBtn = $('#draw .tool[data-tool="shape"]');
   shapeBtn.innerHTML = shapeIcon(tool.shape);
   shapeBtn.setAttribute('aria-label', t('Formes : {name}', { name: t(SHAPE_NAMES[tool.shape]) }));
-  $('#size').replaceChildren(sizeBars());
-  $('#size').setAttribute('aria-label', t('Épaisseur'));
+  shapeBtn.classList.toggle('on', Boolean(tool.stencil));
   const stampBtn = $('#draw .tool[data-tool="stamp"]');
-  stampBtn.replaceChildren(stickerBadge(tool.stamp));
+  stampBtn.replaceChildren(stampIcon(tool.stamp));
+  $('#draw-colors').classList.toggle('off', Boolean(A && A.card) && (tool.kind === 'brush' || tool.kind === 'eraser'));
   const brickBtn = $('#draw .tool[data-tool="brick"]');
   const unit = Math.min(15, 30 / PIECES[tool.brick].w);
   brickBtn.replaceChildren(brickIcon(tool.brick, unit));
-  const stencilBtn = $('#stencil');
-  stencilBtn.innerHTML = stencilIcon(tool.stencil);
-  stencilBtn.classList.toggle('on', Boolean(tool.stencil));
-  stencilBtn.setAttribute('aria-label', t('Pochoir'));
   const mirrorBtn = $('#mirror');
   mirrorBtn.innerHTML = mirrorIcon(tool.mirror);
   mirrorBtn.classList.toggle('on', tool.mirror > 1);
@@ -852,8 +878,7 @@ function updateTools() {
 function openPop(kind, tab = '') {
   if (!pop.hidden && pop.dataset.kind === kind && !tab) { closePop(); return; }
   pop.dataset.kind = kind;
-  pop.classList.remove('grid', 'sizes', 'backgrounds', 'bricks', 'stencils');
-  if (kind === 'stencil') pop.classList.add('stencils');
+  pop.classList.remove('grid', 'backgrounds', 'bricks', 'shapes', 'brushes');
   pop.replaceChildren();
   if (kind === 'stamp') {
     pop.classList.add('grid');
@@ -916,15 +941,6 @@ function openPop(kind, tab = '') {
       extras.append(b);
     }
     pop.append(extras);
-  } else if (kind === 'stencil') {
-    for (const k of ['', ...Object.keys(STENCILS)]) {
-      const b = el('button', 'tool' + (k === tool.stencil ? ' sel' : ''));
-      b.innerHTML = stencilIcon(k);
-      b.dataset.stencil = k;
-      b.setAttribute('aria-label', k ? t('Pochoir {name}', { name: k }) : t('Sans pochoir'));
-      b.addEventListener('click', () => { tool.stencil = k; closePop(); updateTools(); });
-      pop.append(b);
-    }
   } else if (kind === 'bg') {
     pop.classList.add('backgrounds');
     const current = backgroundOf(A ? A.ops : []);
@@ -936,8 +952,8 @@ function openPop(kind, tab = '') {
       b.addEventListener('click', () => {
         closePop();
         if (A && !A.loading && !sameBackground(bg, backgroundOf(A.ops))) commit({ t: 'bg', ...bg });
-        // a scratch card is scratched with the eraser, wide enough to see the colours come
-        if (bg.k === 'scratch') { tool.kind = 'eraser'; tool.size = Math.max(tool.size, 2); updateTools(); }
+        // a scratch card is scratched with the brush, wide enough to see the colours come
+        if (bg.k === 'scratch') { tool.kind = 'brush'; tool.size = Math.max(tool.size, 2); updateTools(); scratchHint(); }
       });
       pop.append(b);
     }
@@ -950,6 +966,11 @@ function openPop(kind, tab = '') {
       b.addEventListener('click', () => { tool.brush = k; tool.kind = 'brush'; closePop(); updateTools(); });
       pop.append(b);
     }
+    pop.classList.add('brushes');
+    pop.append(sizesRow());
+  } else if (kind === 'eraser') {
+    pop.classList.add('brushes');
+    pop.append(sizesRow());
   } else if (kind === 'mirror') {
     for (const m of MIRRORS) {
       const b = el('button', 'tool' + (m === tool.mirror ? ' sel' : ''));
@@ -960,6 +981,7 @@ function openPop(kind, tab = '') {
       pop.append(b);
     }
   } else if (kind === 'shape') {
+    pop.classList.add('shapes');
     for (const k of Object.keys(SHAPES)) {
       const b = el('button', 'tool' + (k === tool.shape ? ' sel' : ''));
       b.innerHTML = shapeIcon(k);
@@ -968,16 +990,27 @@ function openPop(kind, tab = '') {
       b.addEventListener('click', () => { tool.shape = k; tool.kind = 'shape'; closePop(); updateTools(); });
       pop.append(b);
     }
-  } else {
-    pop.classList.add('sizes');
-    SIZES.forEach((w, i) => {
-      const b = el('button', 'tool' + (i === tool.size ? ' sel' : ''));
-      b.append(sizeLine(i));
-      b.dataset.size = i;
-      b.setAttribute('aria-label', t('Épaisseur {n}', { n: i + 1 }));
-      b.addEventListener('click', () => { tool.size = i; closePop(); updateTools(); });
-      pop.append(b);
-    });
+    // stencils: paint only stays inside the shape picked, whatever draws it; the cross puts it away
+    const row = el('div', 'stencils');
+    row.append(el('span', 'caption', t('Pochoirs')));
+    const pick = (k) => { tool.stencil = k; if (k) tool.kind = 'brush'; closePop(); updateTools(); };
+    if (tool.stencil) {
+      const off = el('button', 'tool');
+      off.innerHTML = NO_STENCIL;
+      off.dataset.stencil = '';
+      off.setAttribute('aria-label', t('Retirer le pochoir'));
+      off.addEventListener('click', () => pick(''));
+      row.append(off);
+    }
+    for (const k of Object.keys(STENCILS)) {
+      const b = el('button', 'tool' + (k === tool.stencil ? ' sel' : ''));
+      b.innerHTML = stencilIcon(k);
+      b.dataset.stencil = k;
+      b.setAttribute('aria-label', t('Pochoir {name}', { name: k }));
+      b.addEventListener('click', () => pick(k === tool.stencil ? '' : k));
+      row.append(b);
+    }
+    pop.append(row);
   }
   pop.hidden = false;
 }
@@ -988,14 +1021,13 @@ for (const b of document.querySelectorAll('#draw .tool[data-tool]')) {
   b.addEventListener('click', () => {
     const again = tool.kind === b.dataset.tool;
     tool.kind = b.dataset.tool;
-    // the brush draws at once; its menu opens on a second tap, so a first stroke is never lost
-    if (tool.kind === 'shape' || tool.kind === 'stamp' || tool.kind === 'brick' || (tool.kind === 'brush' && again)) openPop(tool.kind); else closePop();
+    // the brush and the eraser work at once; their menu opens on a second tap, so a first stroke is never lost
+    if (tool.kind === 'shape' || tool.kind === 'stamp' || tool.kind === 'brick' || ((tool.kind === 'brush' || tool.kind === 'eraser') && again)) openPop(tool.kind);
+    else closePop();
     updateTools();
   });
 }
-$('#size').addEventListener('click', () => openPop('size'));
 $('#mirror').addEventListener('click', () => openPop('mirror'));
-$('#stencil').addEventListener('click', () => openPop('stencil'));
 
 for (const c of [...COLORS, RAINBOW]) {
   const b = el('button', 'dot');

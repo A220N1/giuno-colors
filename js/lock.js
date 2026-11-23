@@ -47,7 +47,7 @@ export function resetLock() {
   render();
 }
 
-function toast(text) {
+export function toast(text) {
   const box = $('#toast');
   box.textContent = text;
   box.hidden = false;

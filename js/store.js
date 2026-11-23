@@ -48,6 +48,10 @@ export function setCurrent(id) { write('current', id); }
 export const getLang = () => (read('lang', 'fr') === 'en' ? 'en' : 'fr');
 export const setLang = (lang) => write('lang', lang);
 
+// When the session timer runs out (a time in milliseconds), or 0 without a timer.
+export const getTimerEnd = () => Number(read('timer', 0)) || 0;
+export const setTimerEnd = (end) => write('timer', end);
+
 // The little sounds, on unless turned off on this device.
 export const getSound = () => read('sound', true) !== false;
 export const setSound = (on) => write('sound', Boolean(on));

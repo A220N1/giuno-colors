@@ -217,11 +217,25 @@ function drawStamp(ctx, op) {
   ctx.restore();
 }
 
-export { BACKGROUNDS, BG_NAMES, BG_CLOSE_UP, backgroundOf, sameBackground, paperColor } from './backgrounds.js';
+export { BACKGROUNDS, BG_NAMES, BG_CLOSE_UP, backgroundOf, sameBackground, paperColor, SCRATCH_COAT, scratchPaint } from './backgrounds.js';
 
-export function drawBackground(ctx, bg, k) {
+// A painted background costs hundreds of shapes: `keep`, an object the caller holds, takes a picture
+// of it at this size, laid at once the next times, as long as the background and the size stay.
+const KEEP_MAX_PX = 2400;
+export function drawBackground(ctx, bg, k, keep = null) {
   clearCanvas(ctx, k);
-  paintBackground(ctx, bg);
+  const s = Array.isArray(k) ? k[0] : k, w = Math.round(PAGE_W * s), h = Math.round(PAGE_H * s);
+  if (!keep || !bg || bg.k === 'paper' || Math.max(w, h) > KEEP_MAX_PX) { paintBackground(ctx, bg); return; }
+  const key = `${bg.k}${bg.c || ''}:${w}`;
+  if (keep.key !== key) {
+    keep.canvas = keep.canvas || document.createElement('canvas');
+    keep.canvas.width = w; keep.canvas.height = h;
+    const c = keep.canvas.getContext('2d');
+    c.setTransform(w / PAGE_W, 0, 0, h / PAGE_H, 0, 0);
+    paintBackground(c, bg);
+    keep.key = key;
+  }
+  ctx.drawImage(keep.canvas, 0, 0, PAGE_W, PAGE_H);
 }
 
 // Finger: soft dabs along the stroke, each made of the paint a little behind it, laid at partial
@@ -376,7 +390,16 @@ export function drawPreview(ctx, op, from = 0) {
     if (op.t === 'erase') stroke(ctx, linePath(op.p), op.paper === 'scratch' ? scratchPaint(ctx) : op.paper || '#fff', op.w);
     else if (op.t === 'shape') drawShape(ctx, op, shapePath(op.k, op.b));
     else if (op.t === 'stamp') { ctx.save(); ctx.globalAlpha = 0.85; drawStamp(ctx, op); ctx.restore(); }
-    else if (op.t === 'brick') { ctx.save(); ctx.globalAlpha = 0.8; drawBrick(ctx, op); ctx.restore(); }
+    else if (op.t === 'brick') {
+      ctx.save();
+      if (op.lift) {  // a brick picked up: whole, with its shadow on the page
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+        ctx.shadowBlur = 16;
+        ctx.shadowOffsetY = 8;
+      } else ctx.globalAlpha = 0.8;
+      drawBrick(ctx, op);
+      ctx.restore();
+    }
     else next = drawStroke(ctx, op, from);
   }));
   return next;
@@ -407,10 +430,46 @@ export function clearLayers(fills, lines, ops, k) {
   }
 }
 
-export function renderLayers(fills, lines, ops, k) {
+// `hide`: an operation left out, for a brick being carried.
+// `memo`: an object the caller holds for one drawing on screen. It keeps a picture of both layers as
+// they stood a few operations ago, so that undoing draws again those few and not the whole drawing.
+const MEMO_EVERY = 16;
+export function renderLayers(fills, lines, ops, k, hide = null, memo = null) {
   clearLayers(fills, lines, ops, k);
   const gone = removedOps(ops);
-  for (const op of ops) if (!gone.has(op)) drawOp(fills, lines, op);
+  if (hide) gone.add(hide);
+  let start = 0, mark = 0;
+  // not with bricks taken away or carried: what an operation shows then depends on later ones
+  if (memo && !gone.size) {
+    const view = `${fills.canvas.width}x${fills.canvas.height}:${k}`;
+    mark = Math.floor((ops.length - 1) / MEMO_EVERY) * MEMO_EVERY;
+    if (memo.view === view && memo.n > 0 && memo.n <= ops.length && ops[memo.n - 1] === memo.last) {
+      for (const [ctx, saved] of [[fills, memo.fills], [lines, memo.lines]]) {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalCompositeOperation = 'copy';
+        ctx.drawImage(saved, 0, 0);
+        ctx.restore();
+      }
+      start = memo.n;
+    }
+    memo.view = view;
+  }
+  for (let i = start; i < ops.length; i++) {
+    if (mark >= MEMO_EVERY && i === mark && i > start) {
+      for (const name of ['fills', 'lines']) {
+        const from = name === 'fills' ? fills.canvas : lines.canvas;
+        const to = memo[name] = memo[name] || document.createElement('canvas');
+        if (to.width !== from.width || to.height !== from.height) { to.width = from.width; to.height = from.height; }
+        const c = to.getContext('2d');
+        c.globalCompositeOperation = 'copy';
+        c.drawImage(from, 0, 0);
+      }
+      memo.n = i;
+      memo.last = ops[i - 1];
+    }
+    if (!gone.has(ops[i])) drawOp(fills, lines, ops[i]);
+  }
 }
 
 function makeCanvas(w, h) {

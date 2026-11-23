@@ -149,6 +149,7 @@ export function perfReport() {
     `Giuno Colors ${build}, mesures du ${new Date().toLocaleString('fr-FR')}`,
     `Navigateur : ${navigator.userAgent}`,
     `Écran : ${innerWidth} x ${innerHeight} points, densité ${devicePixelRatio}, ${hz || '?'} Hz, ${installed ? 'appli installée' : 'onglet du navigateur'}`,
+    `Vibration : ${'vibrate' in navigator ? 'proposée par le navigateur' : 'absente de ce navigateur'}`,
     '',
     'Gestes : nombre ; images par seconde ; images en retard ; image médiane, 95 %, pire ; au lâcher, médiane et pire',
   ];
