@@ -7,18 +7,27 @@ import { showProfiles } from './profiles.js';
 import { openPlay, leavePlay } from './play.js';
 import { openDraw, leaveDraw } from './draw.js';
 import { resetLock } from './lock.js';
-import { showStickers } from './backup.js';
+import { showStickers, showAdded } from './backup.js';
 import { loadImported } from './importer.js';
 import { loadStickers } from './stickers.js';
 import { preloadStamps } from './images.js';
 import { newArtId } from './artstore.js';
 import { lang, setLanguage, translatePage } from './i18n.js';
 import { soundOn, setSoundOn, sfx } from './sound.js';
+import { navlog } from './navlog.js';
 
 // Screens map to the address: '' gallery, '#profils' profile choice, '#<drawing id>' colouring,
-// '#libre/<id>' free drawing. A screen opened from the gallery gets its own history entry, marked so
-// that Back returns to the gallery; opened from a bookmark or a reload, Back goes to the gallery directly.
+// '#libre/<id>' free drawing.
+// The phone's Back button never leaves the app: it leads from a drawing to the gallery, from the
+// gallery to the choice of child, and does nothing there. The history holds two entries for that: the
+// one the app started on, and above it a working entry (marked `pushed`) whose address follows the
+// screens. Back lands on the first one; the app shows the screen before and puts the working entry back.
+// The working entry is only added once the screen has been touched: a phone skips, on Back, the
+// entries the user never touched, and would leave the app. The first entry is marked `base`, which
+// tells a Back onto it from a change of address by hand, which also lands on an entry without mark.
 let startupPick = profiles().length >= 2 && !location.hash;  // two children or more: ask who is colouring
+let screen = '';  // 'pick' (who is colouring), 'who' (profiles from the gallery), 'gallery', 'play' or 'draw'
+let up = '';      // the address Back leads to from a drawing: the gallery, or the colouring page being painted freely
 
 export function route() {
   const hash = decodeURIComponent(location.hash.slice(1));
@@ -26,50 +35,82 @@ export function route() {
   leaveDraw();
   resetLock();
   const profile = currentProfile();
-  if (!profile || startupPick || hash === 'profils') return showProfiles(pickProfile);
+  if (!profile || startupPick || hash === 'profils') {
+    screen = hash === 'profils' && profile && !startupPick ? 'who' : 'pick';
+    return showProfiles(pickProfile);
+  }
   const d = drawings.find((x) => x.id === hash);
-  if (d) return openPlay(d, profile.id, goBack, (page) => push(`libre/${newArtId()}@${encodeURIComponent(page.id)}`));
+  screen = 'play';
+  up = '';
+  if (d) return openPlay(d, profile.id, goBack, (page) => show(`libre/${newArtId()}@${encodeURIComponent(page.id)}`));
   // '#libre/<id>', or '#libre/<id>@<colouring page>' for a page painted freely
   if (hash.startsWith('libre/') && hash.length > 6) {
     const [id, baseId = ''] = hash.slice(6).split('@');
+    screen = 'draw';
+    up = baseId && drawings.some((x) => x.id === baseId) ? encodeURIComponent(baseId) : '';
     return openDraw(id, profile.id, goBack, baseId);
   }
+  screen = 'gallery';
   showGallery(profile, openDrawing, openProfiles, openArt);
-}
-
-function clearHash() {
-  history.replaceState(null, '', location.pathname + location.search);
-}
-
-// pushState rather than setting location.hash: while the page is still loading, a hash change
-// replaces the current entry, and Back would then leave the app.
-function push(hash) {
-  history.pushState({ pushed: true }, '', '#' + hash);
-  route();
+  showAdded();
 }
 
 const pushed = () => Boolean(history.state && history.state.pushed);
+const onBase = () => Boolean(history.state && history.state.base);
+const addressOf = (hash) => (hash ? '#' + hash : location.pathname + location.search);
+let lastBack = -1e9;  // when Back was last dealt with: the hash change that comes with it is not a navigation
+
+// Shows the screen of an address, on the working entry.
+function show(hash) {
+  if (pushed()) history.replaceState({ pushed: true }, '', addressOf(hash));
+  else history.pushState({ pushed: true }, '', addressOf(hash));
+  route();
+}
 
 function pickProfile(id) {
   setCurrent(id);
   requestPersistence();
   startupPick = false;
-  if (pushed()) { history.back(); return; }
-  if (location.hash) clearHash();
-  route();
+  show('');
 }
 
-function openProfiles() { push('profils'); }
-function openDrawing(d) { push(encodeURIComponent(d.id)); }
-function openArt(id) { push('libre/' + encodeURIComponent(id)); }
+function openProfiles() { show('profils'); }
+function openDrawing(d) { show(encodeURIComponent(d.id)); }
+function openArt(id) { show('libre/' + encodeURIComponent(id)); }
+function goBack() { show(up); }
 
-function goBack() {
-  if (pushed()) { history.back(); return; }
-  clearHash();
-  route();
+// The working entry, added after the first touch if nothing was opened yet.
+function arm() {
+  removeEventListener('pointerup', arm, true);
+  removeEventListener('keydown', arm, true);
+  setTimeout(() => {
+    if (!onBase()) return;
+    history.pushState({ pushed: true }, '', location.href);
+    navlog('entrée de travail posée');
+  });
 }
+addEventListener('pointerup', arm, true);
+addEventListener('keydown', arm, true);
 
-addEventListener('hashchange', route);
+addEventListener('popstate', () => {
+  if (!onBase()) return;  // the working entry, the padlock's or an address typed by hand: not a Back onto the first entry
+  navlog(`retour depuis ${screen}`);
+  // where Back leads: out of a drawing or the profiles to the gallery, from the gallery to the choice
+  // of child when there are several, and nowhere from there
+  let hash = decodeURIComponent(location.hash.slice(1)), move = false;
+  if (screen === 'play' || screen === 'draw') { hash = up; move = true; }
+  else if (screen === 'who') { hash = ''; move = true; }
+  else if (screen === 'gallery' && profiles().length >= 2) { startupPick = true; hash = ''; move = true; }
+  else if (screen === 'gallery' || screen === 'pick') hash = '';
+  history.pushState({ pushed: true }, '', addressOf(hash));
+  lastBack = performance.now();
+  if (move) route();
+});
+
+addEventListener('hashchange', () => {
+  if (performance.now() - lastBack < 400) return;
+  route();
+});
 
 for (const b of document.querySelectorAll('.lang-switch')) {
   b.addEventListener('click', () => {
@@ -109,15 +150,8 @@ $('#install').addEventListener('click', async () => {
 });
 addEventListener('appinstalled', () => { $('#install').hidden = true; });
 
-// Started inside a drawing, by a reload or by the phone bringing the app back after closing it: there
-// is nothing under it to go back to, and Back would leave the app on an empty screen. The gallery is
-// put under it. A padlock entry left by a reload is being dropped by lock.js: leave that one alone.
-if (location.hash && !pushed() && !(history.state && history.state.lock)) {
-  const hash = location.hash;
-  clearHash();
-  history.pushState({ pushed: true }, '', hash);
-}
-
+if (!history.state) history.replaceState({ base: true }, '', location.href);
+navlog('démarrage');
 translatePage();
 // the colouring pages imported on this phone join the gallery before it shows
 try { await loadImported(); } catch (e) { console.error('imported pages not loaded:', e); }

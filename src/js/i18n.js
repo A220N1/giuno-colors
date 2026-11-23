@@ -80,8 +80,6 @@ const EN = {
   'Plaque de base': 'Baseplate',
   'Modèle {name}': 'Model {name}',
   'Sans modèle': 'No model',
-  'Briques vues de côté': 'Bricks seen from the side',
-  'Briques vues de dessus': 'Bricks seen from above',
   'Pochoir': 'Stencil',
   'Pochoir {name}': 'Stencil {name}',
   'Sans pochoir': 'No stencil',
@@ -105,6 +103,8 @@ const EN = {
   'Un coloriage à numéros au format SVG peut être ajouté depuis un fichier. Il reste sur ce téléphone. Appui long sur sa carte pour le retirer.':
     'A color-by-number page in SVG format can be added from a file. It stays on this phone. Hold its card to remove it.',
   'Ajouter un coloriage': 'Add a coloring page',
+  'Retirer les coloriages ajoutés': 'Remove the added pages',
+  'Retirer de ce téléphone les coloriages ajoutés ({names}) ?': 'Remove the added coloring pages ({names}) from this phone?',
   'Coloriage ajouté : {names}': 'Coloring page added: {names}',
   'Pas un coloriage à numéros : {names}': 'Not a color-by-number page: {names}',
   'Retirer « {title} » de ce téléphone ?': 'Remove "{title}" from this phone?',

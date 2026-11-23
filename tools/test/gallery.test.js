@@ -32,6 +32,16 @@ run(async () => {
 
   check(!document.querySelector('#gallery').hidden, 'gallery after picking a profile');
   check(document.querySelector('#who').textContent.includes('Alice'), 'gallery shows who is colouring');
+  // the phone's Back leads from the gallery to the choice of child, and never out of the app
+  history.back();
+  await sleep(250);
+  check(!document.querySelector('#profiles').hidden && history.state && history.state.pushed, 'Back from the gallery asks who is colouring');
+  history.back();
+  await sleep(250);
+  check(!document.querySelector('#profiles').hidden && history.state && history.state.pushed, 'Back from there stays in the app');
+  document.querySelectorAll('#profile-list .avatar')[0].click();
+  await frames();
+  check(!document.querySelector('#gallery').hidden, 'and a child picked again shows the gallery');
   const cards = document.querySelectorAll('#cards .cards .card');
   check(cards.length === drawings.length, `one card per drawing (${cards.length})`);
   const secrets = [...document.querySelectorAll('#cards .card.secret')];
@@ -144,6 +154,12 @@ run(async () => {
     'the added page heads the gallery');
   check(window.hacked === undefined, 'nothing from the file ran');
   check((await backup.makeBackup()).pages.length === 1, 'the backup holds the added page');
+  check(!document.querySelector('#page-clear').hidden, 'a button offers to remove the added pages');
+  document.querySelector('#page-clear').click();
+  await settle();
+  document.querySelector('#confirm-yes').click();
+  await settle();
+  check(!drawings.includes(page) && document.querySelector('#page-clear').hidden, 'the button removes them all');
   await importer.forgetPage(page.id);
   check(!drawings.includes(page) && (await allPages()).length === 0, 'the added page removed');
 

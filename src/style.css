@@ -172,10 +172,8 @@ canvas.thumb { aspect-ratio: 4 / 5; }
 .toolrow .tool canvas.sample.brick { height: auto !important; }
 .pop.bricks { max-width: min(calc(100% - 16px), 400px); max-height: calc(100% - 20px); overflow-y: auto; gap: 6px 4px; align-items: end; }
 .pop.bricks .tool { width: auto; min-width: 34px; height: 46px; padding: 0 7px; border-radius: 12px; }
-.pop.bricks .extras, .pop.bricks .tabs { flex: 0 0 100%; display: flex; justify-content: center; gap: 6px; padding-top: 6px; border-top: 1px solid #e8e8e8; }
+.pop.bricks .extras { flex: 0 0 100%; display: flex; justify-content: center; gap: 6px; padding-top: 6px; border-top: 1px solid #e8e8e8; }
 .pop.bricks .extras .tool { width: 48px; padding: 0; }
-.pop.bricks .tabs .tool { width: 64px; height: 40px; }
-.pop.bricks .tabs .tool.sel { background: #e1eafb; box-shadow: none; }
 .pop.stencils { display: grid; grid-template-columns: repeat(5, 52px); }
 .tool svg.stencil path { fill: #ddd8cc; fill-rule: evenodd; stroke-width: 1.5px; }
 .tool svg.stencil { width: 32px; height: 32px; }

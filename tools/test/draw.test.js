@@ -18,10 +18,16 @@ run(async () => {
   history.replaceState(null, '', '#01_poisson');
   await import('../js/main.js');
   await frames();
-  check(!$('#play').hidden && history.state && history.state.pushed, 'started inside a colouring page, with the gallery under it');
+  check(!$('#play').hidden && history.state && history.state.base, 'started inside a colouring page');
+  document.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));  // a first touch of the screen
+  await sleep(60);
+  check(history.state && history.state.pushed, 'the first touch readies the Back button');
   history.back();
   await waitFor(() => !$('#gallery').hidden, 'gallery after Back from a page the app started in');
-  check(location.hash === '', 'Back from there shows the gallery');
+  check(location.hash === '' && history.state && history.state.pushed, 'Back from there shows the gallery, ready for the next Back');
+  history.back();
+  await sleep(250);
+  check(!$('#gallery').hidden && history.state && history.state.pushed, 'with one child, Back from the gallery stays in the app');
 
   const stage = $('#draw-stage');
   const flat = () => art.renderFlat(draw.debug.state().ops, art.PAGE_W);  // one pixel per page unit
@@ -381,17 +387,8 @@ run(async () => {
   check(K.ops[K.ops.length - 1].k === 'plate', 'the baseplate is laid under the bricks');
   $('#undo').click();
   $('#undo').click();
-  // seen from above, the pieces follow a square grid
   pickTool('brick');
-  pop.querySelector('[data-tab="top"]').click();
-  check(pop.querySelectorAll('[data-brick]').length === 14 && pop.querySelector('[data-plate="studs"]') && !pop.querySelector('[data-model]'), '14 pieces seen from above');
-  pop.querySelector('[data-brick="m22"]').click();
-  tap(stage, ...at(210, 480));
-  const tile = K.ops[K.ops.length - 1], tbox = bricks.brickBox(tile);
-  check(tile.k === 'm22' && tbox[2] === 80 && tbox[3] === 80 && tbox[1] % 40 === 0 && pixel(flat(), tbox[0] + 5, tbox[1] + 5) === RED, 'a tile seen from above on its grid');
-  $('#undo').click();
-  pickTool('brick');
-  pop.querySelector('[data-tab="side"]').click();
+  check(!pop.querySelector('[data-tab]'), 'the bricks have one page of pieces');
   pop.querySelector('[data-brick="b2"]').click();
   for (let i = 0; i < 4; i++) $('#undo').click();
   check($('.guides .grid') !== null && K.ops[K.ops.length - 1].t !== 'brick', 'the bricks are undone');

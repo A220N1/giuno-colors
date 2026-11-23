@@ -8,7 +8,7 @@ import { sharePng, canvasPng } from './share.js';
 import { sparkler } from './sparkles.js';
 import { STAMPS, stampUrl, stampGroups, isAnimal, isNature, isCustom, customSticker, prepareArt, preloadStamps } from './images.js';
 import { isFirework, flakesOf } from './nature.js';
-import { BRICKS, TOP_BRICKS, PIECES, STUD, PLATE, BASE, MODELS, drawPiece, drawModel, snapBrick, brickBox, brickAt, liveBricks, removedOps,
+import { BRICKS, PIECES, STUD, PLATE, BASE, MODELS, drawPiece, drawModel, snapBrick, brickBox, brickAt, liveBricks, removedOps,
   modelOf, modelLeft } from './bricks.js';
 import { sfx, rubStart, rubMove, rubStop } from './sound.js';
 import { t } from './i18n.js';
@@ -49,8 +49,7 @@ const live = liveCanvas.getContext('2d');
 const pop = $('#draw-pop');
 const sparkles = sparkler($('#sparkles'));
 const DEFAULT_STAMP = 'e2B50';
-const tool = { kind: 'brush', brush: 'marker', color: COLORS[0], size: 1, shape: 'circle', stamp: DEFAULT_STAMP, brick: 'b2', brickTab: 'side',
-  stencil: '', mirror: 1 };  // kept from one drawing to the next
+const tool = { kind: 'brush', brush: 'marker', color: COLORS[0], size: 1, shape: 'circle', stamp: DEFAULT_STAMP, brick: 'b2', stencil: '', mirror: 1 };  // kept from one drawing to the next
 let A = null;  // the drawing on screen
 let pen = null;
 let onBack = () => {};
@@ -677,11 +676,8 @@ function stencilIcon(k) {
   return `<svg viewBox="-0.2 -0.2 1.4 1.4" class="shape stencil"><path d="M-.12 -.12H1.12V1.12H-.12Z${hole}"/>${hole ? '' : '<path d="M.15 .85L.85 .15"/>'}</svg>`;
 }
 
-const PLATE_ICONS = {
-  plate: '<svg viewBox="0 0 24 24" class="scenery"><path d="M5 12h4v3H5zM10 12h4v3h-4zM15 12h4v3h-4z" fill="#3f9a4f"/><rect x="2" y="15" width="20" height="4" rx="1" fill="#4aa35a"/></svg>',
-  studs: '<svg viewBox="0 0 24 24" class="scenery"><rect x="3" y="3" width="18" height="18" rx="2" fill="#4aa35a"/><g fill="#6cc27c"><circle cx="8" cy="8" r="2.6"/>'
-    + '<circle cx="16" cy="8" r="2.6"/><circle cx="8" cy="16" r="2.6"/><circle cx="16" cy="16" r="2.6"/></g></svg>',
-};
+const PLATE_ICON = '<svg viewBox="0 0 24 24" class="scenery"><path d="M5 12h4v3H5zM10 12h4v3h-4zM15 12h4v3h-4z" fill="#3f9a4f"/>'
+  + '<rect x="2" y="15" width="20" height="4" rx="1" fill="#4aa35a"/></svg>';
 
 // A model to build in small, in its colours; without a model, an empty frame crossed out.
 function modelIcon(k) {
@@ -702,7 +698,7 @@ function modelIcon(k) {
 // A brick piece in the colour in use, `unit` pixels to a stud.
 function brickIcon(k, unit) {
   const piece = PIECES[k], dpr = window.devicePixelRatio || 1, s = unit / STUD;
-  const w = piece.w * unit + 4, h = (piece.top ? piece.d * STUD : piece.h * PLATE + 8) * s + 4;
+  const w = piece.w * unit + 4, h = (piece.h * PLATE + 8) * s + 4;
   const c = document.createElement('canvas');
   c.width = Math.round(w * dpr);
   c.height = Math.round(h * dpr);
@@ -780,7 +776,7 @@ function updateGuides() {
   };
   const axes = { 1: [], 2: [90], 4: [90, 0], 6: [90, 30, 150] }[tool.mirror] || [];
   // with the bricks, a dot at every corner of the grid they snap to
-  const row = PIECES[tool.brick].top ? STUD : 3 * PLATE, low = PIECES[tool.brick].top ? PAGE_H : BASE;
+  const row = 3 * PLATE, low = BASE;
   const grid = tool.kind === 'brick' ? `<defs><pattern id="brick-grid" x="${-STUD / 2}" y="${low % row - row / 2}" width="${STUD}" height="${row}" patternUnits="userSpaceOnUse">`
     + `<circle cx="${STUD / 2}" cy="${row / 2}" r="2.4"/></pattern></defs><rect class="grid" width="${PAGE_W}" height="${PAGE_H}" fill="url(#brick-grid)"/>` : '';
   // a stencil veils the page around its shape
@@ -886,20 +882,19 @@ function openPop(kind, tab = '') {
     pop.append(tabs);
   } else if (kind === 'brick') {
     pop.classList.add('bricks');
-    const top = tool.brickTab === 'top';
-    for (const k of top ? TOP_BRICKS : BRICKS) {
+    for (const k of BRICKS) {
       const b = el('button', 'tool' + (k === tool.brick ? ' sel' : ''));
-      b.append(brickIcon(k, top ? 12 : Math.min(15, 36 * STUD / (PIECES[k].h * PLATE + 8))));
+      b.append(brickIcon(k, Math.min(15, 36 * STUD / (PIECES[k].h * PLATE + 8))));
       b.dataset.brick = k;
       b.setAttribute('aria-label', t('Brique {name}', { name: k }));
       b.addEventListener('click', () => { tool.brick = k; tool.kind = 'brick'; closePop(); updateTools(); });
       pop.append(b);
     }
-    // the baseplate under the bricks, on or off, and for the bricks seen from the side the models to build
+    // the baseplate under the bricks, on or off, and the models to build
     const extras = el('div', 'extras');
-    const now = backgroundOf(A ? A.ops : []), plateKey = top ? 'studs' : 'plate', on = Boolean(now && now.k === plateKey);
+    const now = backgroundOf(A ? A.ops : []), plateKey = 'plate', on = Boolean(now && now.k === plateKey);
     const plate = el('button', 'tool' + (on ? ' sel' : ''));
-    plate.innerHTML = PLATE_ICONS[plateKey];
+    plate.innerHTML = PLATE_ICON;
     plate.dataset.plate = plateKey;
     plate.setAttribute('aria-label', t('Plaque de base'));
     plate.addEventListener('click', () => {
@@ -907,38 +902,20 @@ function openPop(kind, tab = '') {
       if (A && !A.loading) commit(on ? { t: 'bg', k: 'paper', c: '#ffffff' } : { t: 'bg', k: plateKey });
     });
     extras.append(plate);
-    if (!top) {
-      const current = modelOf(A ? A.ops : []);
-      for (const m of ['', ...Object.keys(MODELS)]) {
-        const b = el('button', 'tool' + (m === current ? ' sel' : ''));
-        const icon = modelIcon(m);
-        if (typeof icon === 'string') b.innerHTML = icon; else b.append(icon);
-        b.dataset.model = m;
-        b.setAttribute('aria-label', m ? t('Modèle {name}', { name: m }) : t('Sans modèle'));
-        b.addEventListener('click', () => {
-          closePop();
-          if (A && !A.loading && m !== modelOf(A.ops)) { commit({ t: 'model', k: m }); checkModel(); }
-        });
-        extras.append(b);
-      }
+    const current = modelOf(A ? A.ops : []);
+    for (const m of ['', ...Object.keys(MODELS)]) {
+      const b = el('button', 'tool' + (m === current ? ' sel' : ''));
+      const icon = modelIcon(m);
+      if (typeof icon === 'string') b.innerHTML = icon; else b.append(icon);
+      b.dataset.model = m;
+      b.setAttribute('aria-label', m ? t('Modèle {name}', { name: m }) : t('Sans modèle'));
+      b.addEventListener('click', () => {
+        closePop();
+        if (A && !A.loading && m !== modelOf(A.ops)) { commit({ t: 'model', k: m }); checkModel(); }
+      });
+      extras.append(b);
     }
     pop.append(extras);
-    const tabs = el('div', 'tabs');
-    for (const [id, sample, name] of [['side', 'b2', 'Briques vues de côté'], ['top', 'm22', 'Briques vues de dessus']]) {
-      const b = el('button', 'tool' + (id === tool.brickTab ? ' sel' : ''));
-      b.append(brickIcon(sample, 13));
-      b.dataset.tab = id;
-      b.setAttribute('aria-label', t(name));
-      b.addEventListener('click', () => {
-        tool.brickTab = id;
-        if (Boolean(PIECES[tool.brick].top) !== (id === 'top')) tool.brick = sample;
-        tool.kind = 'brick';
-        updateTools();
-        openPop('brick', id);
-      });
-      tabs.append(b);
-    }
-    pop.append(tabs);
   } else if (kind === 'stencil') {
     for (const k of ['', ...Object.keys(STENCILS)]) {
       const b = el('button', 'tool' + (k === tool.stencil ? ' sel' : ''));
