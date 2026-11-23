@@ -368,7 +368,9 @@ run(async () => {
   // background: the night sky, undone
   $('#draw-bg').click();
   const tiles = [...$('#draw-pop').querySelectorAll('[data-bg]')];
-  check(tiles.length === art.BACKGROUNDS.length && tiles.length === 10, `${tiles.length} backgrounds`);
+  check(tiles.length === art.BACKGROUNDS.length && tiles.length === 15, `${tiles.length} backgrounds`);
+  const popBox = $('#draw-pop').getBoundingClientRect(), stageBox = stage.getBoundingClientRect();
+  check(popBox.top >= stageBox.top && popBox.bottom <= stageBox.bottom, 'the background menu fits in the drawing area');
   // every button shows its background: only the white page is plain white
   const plain = tiles.filter((b) => {
     const c = b.querySelector('canvas'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
