@@ -6,12 +6,15 @@ const W = 800, H = 1000;
 
 export const BACKGROUNDS = [
   { k: 'paper', c: '#ffffff' }, { k: 'night' }, { k: 'sea' }, { k: 'meadow' }, { k: 'magic' },
-  { k: 'snow' }, { k: 'sunset' }, { k: 'candy' }, { k: 'grid' }, { k: 'dots' },
+  { k: 'snow' }, { k: 'sunset' }, { k: 'candy' },
+  { k: 'village' }, { k: 'firs' }, { k: 'pole' }, { k: 'sleigh' }, { k: 'hearth' },
+  { k: 'grid' }, { k: 'dots' },
 ];
 
 export const BG_NAMES = {
   paper: 'Page blanche', night: 'Espace', sea: 'Sous la mer', meadow: 'Prairie', magic: 'Ciel magique',
   snow: 'Neige', sunset: 'Coucher de soleil', candy: 'Gourmandises', grid: 'Carreaux', dots: 'Points',
+  village: 'Village de Noël', firs: 'Sapins illuminés', pole: 'Pôle Nord', sleigh: 'Nuit de Noël', hearth: 'Coin du feu',
 };
 
 // Patterns are shown up close on their buttons, or their lines would be thinner than a pixel.
@@ -27,7 +30,8 @@ export function backgroundOf(ops) {
 export const sameBackground = (a, b) => (a ? a.k : 'paper') === (b ? b.k : 'paper') && (a && a.c || '#ffffff') === (b && b.c || '#ffffff');
 
 // The colour the eraser shows while erasing: roughly the background.
-const PAPER = { night: '#1d2552', sea: '#3fa9cf', meadow: '#cdeccf', magic: '#e3c6ec', snow: '#d9e8f6', sunset: '#f4a58f', candy: '#ffe6f0' };
+const PAPER = { night: '#1d2552', sea: '#3fa9cf', meadow: '#cdeccf', magic: '#e3c6ec', snow: '#d9e8f6', sunset: '#f4a58f', candy: '#ffe6f0',
+  village: '#2c417f', firs: '#9a72ad', pole: '#16305c', sleigh: '#22387a', hearth: '#f2dabb' };
 export function paperColor(bg) {
   if (!bg || bg.k === 'paper') return bg ? bg.c : '#ffffff';
   return PAPER[bg.k] || '#ffffff';
@@ -88,16 +92,34 @@ function ground(ctx, base, waves, style) {
   ctx.fill();
 }
 
-function night(ctx) {
-  fillAll(ctx, vgrad(ctx, [[0, '#0d1636'], [1, '#2d3166']]));
+const hillY = (x, base, waves) => waves.reduce((y, [amp, len, phase]) => y + amp * Math.sin(x / len + phase), base);
+
+function disc(ctx, x, y, r, style) {
+  if (style) ctx.fillStyle = style;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+}
+
+function stars(ctx, n, seed, maxY) {
   ctx.fillStyle = '#fff';
-  for (let i = 0; i < 150; i++) {
-    ctx.globalAlpha = 0.35 + 0.65 * rand(i, 3);
-    ctx.beginPath();
-    ctx.arc(rand(i, 0) * W, rand(i, 1) * H, 0.8 + 2 * rand(i, 2) ** 2, 0, Math.PI * 2);
-    ctx.fill();
+  for (let i = 0; i < n; i++) {
+    ctx.globalAlpha = 0.35 + 0.65 * rand(i, seed + 3);
+    disc(ctx, rand(i, seed) * W, rand(i, seed + 1) * maxY, 0.8 + 2 * rand(i, seed + 2) ** 2);
   }
   ctx.globalAlpha = 1;
+}
+
+function snowfall(ctx, n, seed, maxY) {
+  ctx.fillStyle = '#ffffff';
+  for (let i = 0; i < n; i++) {
+    ctx.globalAlpha = 0.55 + 0.45 * rand(i, seed);
+    disc(ctx, rand(i, seed + 1) * W, rand(i, seed + 2) * maxY, 1.5 + 3 * rand(i, seed + 3) ** 2);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function night(ctx) {
+  fillAll(ctx, vgrad(ctx, [[0, '#0d1636'], [1, '#2d3166']]));
+  stars(ctx, 150, 0, H);
 }
 
 function sea(ctx) {
@@ -224,12 +246,12 @@ function flake(ctx, x, y, r) {
   ctx.stroke();
 }
 
-function pine(ctx, x, y, s) {
+function pine(ctx, x, y, s, green = '#2f7d5b') {
   ctx.fillStyle = '#7a5539';
   ctx.fillRect(x - 7 * s, y - 4, 14 * s, 28 * s);
   for (let i = 0; i < 3; i++) {
     const top = y - (60 + i * 42) * s, half = (62 - i * 14) * s, bottom = y - i * 42 * s;
-    ctx.fillStyle = '#2f7d5b';
+    ctx.fillStyle = green;
     ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x + half, bottom); ctx.lineTo(x - half, bottom); ctx.fill();
     ctx.fillStyle = '#ffffff';
     ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x + half * 0.42, top + (bottom - top) * 0.42); ctx.lineTo(x - half * 0.42, top + (bottom - top) * 0.42); ctx.fill();
@@ -324,6 +346,461 @@ function candy(ctx) {
   ctx.stroke();
 }
 
+// Christmas scenes. The middle of the page stays quiet in each of them, for what the child adds.
+
+// A fir far away: three tiers in one colour, h high, standing on (x, y).
+function fir(ctx, x, y, h, colour) {
+  ctx.fillStyle = colour;
+  ctx.beginPath();
+  for (let i = 0; i < 3; i++) {
+    const top = y - h + i * h * 0.24, bottom = y - h * 0.62 + i * h * 0.31, half = h * (0.2 + i * 0.08);
+    ctx.moveTo(x, top); ctx.lineTo(x + half, bottom); ctx.lineTo(x - half, bottom); ctx.closePath();
+  }
+  ctx.fill();
+}
+
+function smoke(ctx, x, y, s) {
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+  for (const [dx, dy, r] of [[0, -8, 7], [7, -24, 10], [1, -44, 13], [11, -68, 16]]) disc(ctx, x + dx * s, y + dy * s, r * s);
+}
+
+// A chalet seen from the front, standing on (x, y): snow on the roof and the chimney, lit windows.
+function chalet(ctx, x, y, s, wall = '#8f5b3d') {
+  const rect = (x0, y0, w, h) => ctx.fillRect(x + x0 * s, y + y0 * s, w * s, h * s);
+  ctx.fillStyle = '#6a4330';
+  rect(16, -98, 13, 42);
+  ctx.fillStyle = wall;
+  ctx.beginPath();
+  ctx.moveTo(x - 40 * s, y); ctx.lineTo(x - 40 * s, y - 50 * s); ctx.lineTo(x, y - 90 * s); ctx.lineTo(x + 40 * s, y - 50 * s); ctx.lineTo(x + 40 * s, y);
+  ctx.fill();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 13 * s;
+  ctx.beginPath(); ctx.moveTo(x - 49 * s, y - 45 * s); ctx.lineTo(x, y - 93 * s); ctx.lineTo(x + 49 * s, y - 45 * s); ctx.stroke();
+  ctx.lineWidth = 7 * s;
+  ctx.beginPath(); ctx.moveTo(x + 16 * s, y - 99 * s); ctx.lineTo(x + 29 * s, y - 99 * s); ctx.stroke();
+  ctx.fillStyle = '#5a3826';
+  rect(8, -32, 18, 32);
+  glow(ctx, x - 20 * s, y - 26 * s, 34 * s, 'rgba(255, 214, 102, 0.5)', 'rgba(255, 214, 102, 0)');
+  ctx.fillStyle = '#ffd966';
+  rect(-31, -37, 21, 21);
+  disc(ctx, x, y - 62 * s, 6.5 * s);
+  ctx.strokeStyle = '#6a4330';
+  ctx.lineWidth = 2.2 * s;
+  ctx.beginPath();
+  ctx.moveTo(x - 20.5 * s, y - 37 * s); ctx.lineTo(x - 20.5 * s, y - 16 * s);
+  ctx.moveTo(x - 31 * s, y - 26.5 * s); ctx.lineTo(x - 10 * s, y - 26.5 * s);
+  ctx.stroke();
+}
+
+function church(ctx, x, y, s) {
+  const rect = (x0, y0, w, h) => ctx.fillRect(x + x0 * s, y + y0 * s, w * s, h * s);
+  ctx.fillStyle = '#cdb99f';
+  rect(20, -56, 78, 56);
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(x + 14 * s, y - 52 * s); ctx.lineTo(x + 22 * s, y - 86 * s); ctx.lineTo(x + 92 * s, y - 86 * s); ctx.lineTo(x + 104 * s, y - 52 * s);
+  ctx.fill();
+  ctx.fillStyle = '#dccab2';
+  rect(-22, -122, 44, 122);
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.moveTo(x - 28 * s, y - 118 * s); ctx.lineTo(x, y - 196 * s); ctx.lineTo(x + 28 * s, y - 118 * s); ctx.fill();
+  glow(ctx, x, y - 84 * s, 30 * s, 'rgba(255, 214, 102, 0.45)', 'rgba(255, 214, 102, 0)');
+  ctx.fillStyle = '#ffd966';
+  for (const [wx, wy, w, h] of [[0, -84, 14, 26], [40, -30, 11, 22], [60, -30, 11, 22], [80, -30, 11, 22]]) {
+    ctx.beginPath();
+    ctx.moveTo(x + (wx - w / 2) * s, y + (wy + h / 2) * s);
+    ctx.lineTo(x + (wx - w / 2) * s, y + (wy - h / 2 + w / 2) * s);
+    ctx.arc(x + wx * s, y + (wy - h / 2 + w / 2) * s, w / 2 * s, Math.PI, 0);
+    ctx.lineTo(x + (wx + w / 2) * s, y + (wy + h / 2) * s);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#5a3826';
+  ctx.beginPath(); ctx.moveTo(x - 9 * s, y); ctx.lineTo(x - 9 * s, y - 22 * s); ctx.arc(x, y - 22 * s, 9 * s, Math.PI, 0); ctx.lineTo(x + 9 * s, y); ctx.fill();
+}
+
+function moon(ctx, x, y, r) {
+  glow(ctx, x, y, r * 2.4, 'rgba(255, 246, 205, 0.5)', 'rgba(255, 246, 205, 0)');
+  disc(ctx, x, y, r, '#fff6cf');
+  ctx.fillStyle = 'rgba(226, 210, 160, 0.5)';
+  for (const [dx, dy, k] of [[-0.35, -0.22, 0.2], [0.28, 0.16, 0.14], [-0.1, 0.42, 0.11], [0.4, -0.38, 0.09], [-0.5, 0.2, 0.07]]) {
+    disc(ctx, x + dx * r, y + dy * r, k * r);
+  }
+}
+
+function village(ctx) {
+  fillAll(ctx, vgrad(ctx, [[0, '#0e1740'], [0.65, '#2c417f'], [1, '#6377b4']], 0, 760));
+  stars(ctx, 120, 120, 600);
+  moon(ctx, 610, 180, 64);
+  const far = [[36, 170, 1], [10, 60, 0.3]], mid = [[28, 140, 2.6], [8, 50, 1]];
+  ground(ctx, 650, far, '#7f95c8');
+  for (let i = 0; i < 16; i++) {
+    const x = 20 + i * 52 + 30 * rand(i, 130);
+    fir(ctx, x, hillY(x, 650, far) + 8, 46 + 34 * rand(i, 131), '#3b4f86');
+  }
+  ground(ctx, 745, mid, '#bccdeb');
+  const on = (x) => hillY(x, 745, mid);
+  for (const [x, s] of [[215, 0.6], [470, 0.5], [600, 0.7]]) pine(ctx, x, on(x) + 6, s, '#2a6a55');
+  church(ctx, 370, on(390) + 10, 0.95);
+  for (const [x, s, wall] of [[110, 1, '#8f5b3d'], [285, 0.8, '#a2654a'], [545, 0.9, '#7d5138'], [700, 1.05, '#96603f']]) {
+    smoke(ctx, x + 22 * s, on(x) - 96 * s, s);
+    chalet(ctx, x, on(x) + 12 * s, s, wall);
+  }
+  ground(ctx, 880, [[20, 120, 0.8], [6, 40, 2]], '#eef4fc');
+  pine(ctx, 55, 950, 1.5);
+  pine(ctx, 772, 965, 1.45);
+  snowfall(ctx, 110, 140, 900);
+}
+
+// Coloured bulbs on a wire hanging between two points.
+function garland(ctx, x0, y0, x1, y1, sag, n, first) {
+  const colours = ['#ff5a5f', '#ffd23f', '#4cd08a', '#5db7ff', '#ff8ad0'];
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2 + 2 * sag;
+  ctx.strokeStyle = '#2b2f55';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(mx, my, x1, y1); ctx.stroke();
+  for (let i = 1; i < n; i++) {
+    const t = i / n, u = 1 - t;
+    const x = u * u * x0 + 2 * u * t * mx + t * t * x1, y = u * u * y0 + 2 * u * t * my + t * t * y1 + 9;
+    const c = colours[(i + first) % colours.length];
+    const [r, g, b] = [1, 3, 5].map((k) => parseInt(c.slice(k, k + 2), 16));
+    glow(ctx, x, y, 24, `rgba(${r}, ${g}, ${b}, 0.55)`, `rgba(${r}, ${g}, ${b}, 0)`);
+    ctx.fillStyle = c;
+    ctx.beginPath(); ctx.ellipse(x, y, 6.5, 9, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2b2f55';
+    ctx.fillRect(x - 3, y - 12, 6, 5);
+  }
+}
+
+// Baubles on a fir drawn by pine().
+function baubles(ctx, x, y, s) {
+  const colours = ['#ff5a5f', '#ffd23f', '#5db7ff', '#ff8ad0'];
+  [[-34, -12], [8, -20], [38, -8], [-20, -52], [18, -58], [-8, -96], [10, -104]].forEach(([dx, dy], i) => {
+    disc(ctx, x + dx * s, y + dy * s, 5 * s, colours[i % colours.length]);
+  });
+}
+
+function firs(ctx) {
+  fillAll(ctx, vgrad(ctx, [[0, '#34356f'], [0.45, '#8f66a8'], [0.8, '#f1a9a0'], [1, '#fbd3b5']], 0, 720));
+  stars(ctx, 60, 150, 300);
+  for (let i = 0; i < 22; i++) fir(ctx, -10 + i * 39 + 22 * rand(i, 160), 690, 120 + 90 * rand(i, 161), '#7d74b3');
+  for (let i = 0; i < 15; i++) fir(ctx, 10 + i * 56 + 30 * rand(i, 162), 745, 150 + 110 * rand(i, 163), '#4f5a96');
+  ground(ctx, 730, [[18, 150, 0.4]], '#dfe6f6');
+  pine(ctx, 165, 800, 1.2);
+  pine(ctx, 640, 790, 1.1);
+  ground(ctx, 850, [[22, 130, 2]], '#ffffff');
+  pine(ctx, 50, 935, 2.3);
+  baubles(ctx, 50, 935, 2.3);
+  pine(ctx, 752, 945, 2.5);
+  baubles(ctx, 752, 945, 2.5);
+  garland(ctx, -20, 70, 820, 50, 70, 15, 0);
+  garland(ctx, -20, 215, 820, 235, 55, 13, 2);
+  snowfall(ctx, 90, 180, 880);
+}
+
+// A curtain of northern lights: a bright wavy ribbon at `base`, with rays fading upwards over `depth`.
+function aurora(ctx, base, amp, len, phase, rgb, depth, seed) {
+  const edge = (x) => base + amp * Math.sin(x / len + phase) + amp * 0.4 * Math.sin(x / (len * 0.37) + phase * 2);
+  const ribbon = () => {
+    ctx.beginPath();
+    ctx.moveTo(-20, edge(-20));
+    for (let x = -10; x <= W + 20; x += 10) ctx.lineTo(x, edge(x));
+  };
+  ribbon();
+  ctx.lineTo(W + 20, base - depth);
+  ctx.lineTo(-20, base - depth);
+  ctx.fillStyle = vgrad(ctx, [[0, `rgba(${rgb}, 0)`], [1, `rgba(${rgb}, 0.26)`]], base - depth, base + amp);
+  ctx.fill();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const [n, width, alpha, reach] of [[120, 8, 0.1, 1], [50, 4, 0.2, 0.7]]) {
+    ctx.strokeStyle = `rgba(${rgb}, ${alpha})`;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const x = rand(i, seed + width) * W;
+      ctx.moveTo(x, edge(x));
+      ctx.lineTo(x + 6, edge(x) - depth * reach * (0.3 + 0.7 * rand(i, seed + width + 1)));
+    }
+    ctx.stroke();
+  }
+  for (const [width, style] of [[22, `rgba(${rgb}, 0.28)`], [9, `rgba(${rgb}, 0.6)`], [3, 'rgba(255, 255, 255, 0.55)']]) {
+    ctx.strokeStyle = style;
+    ctx.lineWidth = width;
+    ribbon();
+    ctx.stroke();
+  }
+}
+
+function igloo(ctx, x, y, r) {
+  ctx.fillStyle = vgrad(ctx, [[0, '#fbfdff'], [1, '#c5d9ef']], y - r, y);
+  ctx.beginPath(); ctx.arc(x, y, r, Math.PI, 0); ctx.fill();
+  ctx.strokeStyle = '#9fbcdc';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(x, y, r, Math.PI, 0); ctx.stroke();
+  ctx.beginPath();
+  const courses = [0, 0.33, 0.62, 0.86, 1];
+  const half = (k) => Math.sqrt(Math.max(0, 1 - k * k)) * r;
+  for (let j = 0; j < 4; j++) {
+    const k0 = courses[j], k1 = courses[j + 1];
+    if (j) { ctx.moveTo(x - half(k0), y - k0 * r); ctx.lineTo(x + half(k0), y - k0 * r); }
+    for (let m = -4; m <= 4; m++) {
+      const dx = (m + (j % 2) / 2) * r * 0.42;
+      if (Math.abs(dx) < half(k1) - 4) { ctx.moveTo(x + dx, y - k0 * r); ctx.lineTo(x + dx, y - k1 * r); }
+    }
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#eaf2fc';
+  ctx.beginPath(); ctx.arc(x, y, r * 0.46, Math.PI, 0); ctx.fill();
+  ctx.beginPath(); ctx.arc(x, y, r * 0.46, Math.PI, 0); ctx.stroke();
+  ctx.fillStyle = '#2f4a73';
+  ctx.beginPath(); ctx.arc(x, y, r * 0.31, Math.PI, 0); ctx.fill();
+}
+
+// The pole itself: red and white stripes under a golden ball.
+function stripedPole(ctx, x, y, h) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x - 11, y - h, 22, h); ctx.clip();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(x - 11, y - h, 22, h);
+  ctx.fillStyle = '#e04a43';
+  for (let yy = y - h - 30; yy < y; yy += 36) {
+    ctx.beginPath(); ctx.moveTo(x - 11, yy + 22); ctx.lineTo(x + 11, yy); ctx.lineTo(x + 11, yy + 18); ctx.lineTo(x - 11, yy + 40); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(40, 60, 110, 0.18)';
+  ctx.fillRect(x + 3, y - h, 8, h);
+  ctx.restore();
+  disc(ctx, x, y - h - 14, 18, '#ffcf4a');
+  disc(ctx, x - 6, y - h - 20, 5, 'rgba(255, 255, 255, 0.7)');
+}
+
+function pole(ctx) {
+  fillAll(ctx, vgrad(ctx, [[0, '#06102c'], [1, '#1d4170']], 0, 740));
+  stars(ctx, 130, 190, 560);
+  aurora(ctx, 250, 26, 170, 4, '190, 130, 255', 190, 250);
+  aurora(ctx, 380, 40, 120, 1.9, '110, 220, 255', 270, 260);
+  aurora(ctx, 500, 46, 150, 0.3, '90, 255, 170', 330, 270);
+  const far = [[26, 180, 0.9], [9, 70, 2]];
+  ground(ctx, 700, far, '#a9c8e8');
+  smoke(ctx, 432, hillY(410, 700, far) - 78, 0.9);
+  chalet(ctx, 410, hillY(410, 700, far) + 10, 0.9, '#b8433c');
+  for (const [x, h] of [[300, 70], [335, 95], [505, 85], [540, 60]]) fir(ctx, x, hillY(x, 700, far) + 6, h, '#2c5f6e');
+  ground(ctx, 790, [[22, 150, 2.4], [7, 50, 0.5]], '#d6e6f6');
+  igloo(ctx, 165, 872, 100);
+  stripedPole(ctx, 640, 890, 170);
+  ground(ctx, 905, [[14, 110, 1.2]], '#f6faff');
+  snowfall(ctx, 80, 200, 900);
+}
+
+// One reindeer of the team in full gallop, seen as a shadow against the moon.
+function reindeer(ctx, x, y) {
+  ctx.beginPath(); ctx.ellipse(x, y, 26, 10.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x + 14, y - 8); ctx.lineTo(x + 30, y - 30); ctx.lineTo(x + 40, y - 26); ctx.lineTo(x + 26, y + 2);
+  ctx.moveTo(x - 24, y - 5); ctx.lineTo(x - 34, y - 12); ctx.lineTo(x - 26, y + 2);
+  ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + 39, y - 28, 10, 6, 0.25, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = 4.5;
+  ctx.beginPath();
+  ctx.moveTo(x + 18, y + 4); ctx.lineTo(x + 34, y + 14); ctx.lineTo(x + 46, y + 10);
+  ctx.moveTo(x + 12, y + 6); ctx.lineTo(x + 24, y + 22); ctx.lineTo(x + 36, y + 22);
+  ctx.moveTo(x - 18, y + 4); ctx.lineTo(x - 34, y + 16); ctx.lineTo(x - 46, y + 12);
+  ctx.moveTo(x - 12, y + 6); ctx.lineTo(x - 22, y + 24); ctx.lineTo(x - 34, y + 26);
+  ctx.stroke();
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(x + 35, y - 33); ctx.lineTo(x + 29, y - 52); ctx.moveTo(x + 32, y - 42); ctx.lineTo(x + 39, y - 50);
+  ctx.moveTo(x + 40, y - 33); ctx.lineTo(x + 47, y - 50); ctx.moveTo(x + 43, y - 41); ctx.lineTo(x + 51, y - 44);
+  ctx.stroke();
+}
+
+// Santa's sleigh and three reindeer, about 380 units long around (0, 0), flying to the right.
+function team(ctx) {
+  ctx.fillStyle = ctx.strokeStyle = '#1b2150';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  reindeer(ctx, 140, -6);
+  reindeer(ctx, 60, 4);
+  reindeer(ctx, -20, -4);
+  ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.moveTo(-78, -6); ctx.lineTo(-20, -10); ctx.lineTo(60, -2); ctx.lineTo(140, -12); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-178, -20);
+  ctx.quadraticCurveTo(-164, -30, -160, -6);
+  ctx.lineTo(-104, -6); ctx.lineTo(-92, -32); ctx.lineTo(-76, -34);
+  ctx.quadraticCurveTo(-72, 14, -100, 16);
+  ctx.lineTo(-160, 16);
+  ctx.quadraticCurveTo(-184, 12, -178, -20);
+  ctx.fill();
+  ctx.lineWidth = 3.2;
+  ctx.beginPath();
+  ctx.moveTo(-186, 18); ctx.quadraticCurveTo(-186, 28, -172, 28); ctx.lineTo(-86, 28); ctx.quadraticCurveTo(-70, 28, -68, 16);
+  ctx.moveTo(-150, 16); ctx.lineTo(-150, 28); ctx.moveTo(-104, 16); ctx.lineTo(-104, 28);
+  ctx.stroke();
+  disc(ctx, -152, -22, 19);
+  ctx.beginPath(); ctx.ellipse(-122, -22, 15, 19, 0, 0, Math.PI * 2); ctx.fill();
+  disc(ctx, -118, -47, 9);
+  ctx.beginPath(); ctx.moveTo(-127, -50); ctx.lineTo(-109, -53); ctx.lineTo(-134, -70); ctx.fill();
+  disc(ctx, -135, -70, 4);
+}
+
+function sleigh(ctx) {
+  fillAll(ctx, vgrad(ctx, [[0, '#0a1034'], [0.7, '#253d7c'], [1, '#42609f']]));
+  stars(ctx, 140, 210, 800);
+  ctx.fillStyle = 'rgba(255, 244, 190, 0.9)';
+  for (let i = 0; i < 14; i++) sparkle(ctx, rand(i, 215) * W, rand(i, 216) * 640, 5 + 9 * rand(i, 217) ** 2);
+  moon(ctx, 400, 320, 185);
+  ctx.save();
+  ctx.translate(404, 322);
+  ctx.rotate(-0.2);
+  ctx.scale(0.86, 0.86);
+  team(ctx);
+  ctx.restore();
+  for (let i = 0; i < 14; i++) fir(ctx, 10 + i * 60 + 30 * rand(i, 220), 905, 90 + 70 * rand(i, 221), '#1a2456');
+  for (const [x, y, s, wall] of [[95, 1012, 1.75, '#39407a'], [262, 1020, 1.5, '#4b3f6e'], [425, 1008, 1.9, '#33487d'],
+    [600, 1022, 1.55, '#4b3f6e'], [745, 1010, 1.7, '#39407a']]) {
+    smoke(ctx, x + 22 * s, y - 100 * s, s * 0.8);
+    chalet(ctx, x, y, s, wall);
+  }
+  snowfall(ctx, 90, 225, 960);
+}
+
+function flame(ctx, x, y, w, h, colour) {
+  ctx.fillStyle = colour;
+  ctx.beginPath();
+  ctx.moveTo(x - w / 2, y);
+  ctx.bezierCurveTo(x - w * 0.62, y - h * 0.45, x - w * 0.12, y - h * 0.6, x + w * 0.06, y - h);
+  ctx.bezierCurveTo(x + w * 0.2, y - h * 0.62, x + w * 0.62, y - h * 0.42, x + w / 2, y);
+  ctx.fill();
+}
+
+function gift(ctx, x, y, w, h, colour, ribbon) {
+  ctx.fillStyle = colour;
+  ctx.fillRect(x, y - h, w, h);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+  ctx.fillRect(x, y - h, w, h * 0.16);
+  ctx.fillStyle = ribbon;
+  ctx.fillRect(x + w / 2 - 5, y - h, 10, h);
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2 - 9, y - h - 5, 10, 6, -0.5, 0, Math.PI * 2);
+  ctx.ellipse(x + w / 2 + 9, y - h - 5, 10, 6, 0.5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function stocking(ctx, x, y, colour) {
+  ctx.strokeStyle = '#7a4a2e';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 9); ctx.stroke();
+  ctx.fillStyle = colour;
+  ctx.fillRect(x - 11, y + 20, 22, 36);
+  ctx.beginPath(); ctx.ellipse(x + 7, y + 58, 20, 12, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x - 14, y + 8, 28, 15, 5); else ctx.rect(x - 14, y + 8, 28, 15);
+  ctx.fill();
+}
+
+function hearth(ctx) {
+  fillAll(ctx, vgrad(ctx, [[0, '#f6e3c8'], [1, '#efd3b0']], 0, 800), 0, 800);
+  ctx.fillStyle = 'rgba(214, 170, 120, 0.16)';
+  for (let x = 0; x < W; x += 80) ctx.fillRect(x, 0, 40, 800);
+  fillAll(ctx, vgrad(ctx, [[0, '#b98859'], [1, '#9c6d43']], 800, H), 800, H);
+  ctx.strokeStyle = 'rgba(110, 70, 40, 0.45)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  [850, 905, 962].forEach((y, j) => {
+    ctx.moveTo(0, y); ctx.lineTo(W, y);
+    for (let x = 90 + j * 130; x < W; x += 300) { ctx.moveTo(x, y); ctx.lineTo(x, y - 52); }
+  });
+  ctx.stroke();
+  ctx.fillStyle = '#8a5a3a';
+  ctx.fillRect(0, 780, W, 22);
+
+  // a window on the snowy night
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(38, 228, 204, 264);
+  ctx.fillStyle = vgrad(ctx, [[0, '#17245a'], [1, '#3c5aa0']], 240, 480);
+  ctx.fillRect(50, 240, 180, 240);
+  ctx.fillStyle = '#ffffff';
+  for (let i = 0; i < 34; i++) disc(ctx, 54 + rand(i, 230) * 172, 244 + rand(i, 231) * 222, 1.6 + 2.6 * rand(i, 232) ** 2);
+  ctx.beginPath(); ctx.moveTo(50, 480); ctx.quadraticCurveTo(95, 452, 140, 470); ctx.quadraticCurveTo(190, 448, 230, 480); ctx.fill();
+  ctx.fillRect(136, 240, 8, 240);
+  ctx.fillRect(50, 352, 180, 8);
+  ctx.fillRect(28, 488, 224, 16);
+
+  // the fireplace, its fire, the stockings on the mantel
+  ctx.fillStyle = '#b4553e';
+  ctx.fillRect(270, 560, 260, 240);
+  ctx.strokeStyle = 'rgba(240, 190, 165, 0.55)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let j = 0; j < 8; j++) {
+    const y = 590 + j * 30;
+    ctx.moveTo(270, y); ctx.lineTo(530, y);
+    for (let x = 270 + (j % 2 ? 26 : 52); x < 530; x += 52) { ctx.moveTo(x, y - 30); ctx.lineTo(x, y); }
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#2b1a17';
+  ctx.beginPath(); ctx.moveTo(322, 800); ctx.lineTo(322, 690); ctx.arc(400, 690, 78, Math.PI, 0); ctx.lineTo(478, 800); ctx.fill();
+  glow(ctx, 400, 770, 130, 'rgba(255, 170, 60, 0.6)', 'rgba(255, 170, 60, 0)');
+  ctx.fillStyle = '#6b4226';
+  ctx.save(); ctx.translate(400, 790); ctx.rotate(0.12); ctx.fillRect(-62, -9, 124, 16); ctx.rotate(-0.26); ctx.fillRect(-58, -12, 116, 15); ctx.restore();
+  flame(ctx, 400, 788, 92, 128, '#ff8a2b');
+  flame(ctx, 362, 788, 50, 82, '#ff8a2b');
+  flame(ctx, 440, 788, 56, 94, '#ff8a2b');
+  flame(ctx, 400, 788, 50, 78, '#ffd34d');
+  flame(ctx, 364, 788, 26, 46, '#ffd34d');
+  flame(ctx, 438, 788, 28, 52, '#ffd34d');
+  ctx.fillStyle = '#8b8fa0';
+  ctx.fillRect(254, 796, 292, 16);
+  ctx.fillStyle = '#7a4a2e';
+  ctx.fillRect(244, 536, 312, 30);
+  ctx.fillStyle = '#93603f';
+  ctx.fillRect(244, 536, 312, 8);
+  stocking(ctx, 305, 566, '#d9463e');
+  stocking(ctx, 400, 566, '#3f9b5b');
+  stocking(ctx, 495, 566, '#d9463e');
+  for (let i = 0; i < 15; i++) disc(ctx, 254 + i * 21, 530 + 4 * Math.sin(i * 1.3), 14, i % 2 ? '#3f8f55' : '#347c49');
+  for (let i = 0; i < 7; i++) disc(ctx, 264 + i * 45, 532, 4.5, '#e04a43');
+
+  // a rug, then the tree and its presents
+  ctx.fillStyle = '#c8504a';
+  ctx.beginPath(); ctx.ellipse(330, 918, 215, 50, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#f3d9a4';
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.ellipse(330, 918, 190, 38, 0, 0, Math.PI * 2); ctx.stroke();
+  const tx = 662;
+  ctx.fillStyle = '#7a5539';
+  ctx.fillRect(tx - 13, 838, 26, 40);
+  ctx.fillStyle = '#b4553e';
+  ctx.beginPath(); ctx.moveTo(tx - 34, 868); ctx.lineTo(tx + 34, 868); ctx.lineTo(tx + 26, 912); ctx.lineTo(tx - 26, 912); ctx.fill();
+  const colours = ['#ff5a5f', '#ffd23f', '#5db7ff', '#ff8ad0', '#ffffff'];
+  for (let i = 3; i >= 0; i--) {
+    const top = 432 + i * 82, bottom = top + 158, half = 58 + i * 34;
+    ctx.fillStyle = i % 2 ? '#2f8a57' : '#37975f';
+    ctx.beginPath(); ctx.moveTo(tx, top); ctx.lineTo(tx + half, bottom); ctx.quadraticCurveTo(tx, bottom + 22, tx - half, bottom); ctx.fill();
+    ctx.strokeStyle = '#ffe28a';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(tx - half * 0.62, bottom - 50); ctx.quadraticCurveTo(tx, bottom - 8, tx + half * 0.7, bottom - 44); ctx.stroke();
+    for (let b = 0; b < 3 + i; b++) {
+      const f = (b + 0.5) / (3 + i), x = tx + (f - 0.5) * 1.5 * half, y = bottom - 14 - 26 * Math.sin(f * Math.PI) + 8 * rand(i * 7 + b, 240);
+      disc(ctx, x, y, 8.5, colours[(i * 2 + b) % colours.length]);
+    }
+  }
+  glow(ctx, tx, 428, 60, 'rgba(255, 220, 110, 0.6)', 'rgba(255, 220, 110, 0)');
+  ctx.fillStyle = '#ffd23f';
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 12 : 28;
+    ctx.lineTo(tx + r * Math.cos(a), 428 + r * Math.sin(a));
+  }
+  ctx.fill();
+  gift(ctx, 520, 930, 74, 62, '#d9463e', '#ffd23f');
+  gift(ctx, 590, 950, 58, 46, '#4a8fd9', '#ffffff');
+  gift(ctx, 706, 940, 70, 58, '#3f9b5b', '#e04a43');
+}
+
 function grid(ctx) {
   fillAll(ctx, '#ffffff');
   ctx.strokeStyle = '#c9dcf3';
@@ -342,7 +819,7 @@ function dots(ctx) {
   ctx.fill();
 }
 
-const PAINTERS = { night, sea, meadow, magic, snow, sunset, candy, grid, dots };
+const PAINTERS = { night, sea, meadow, magic, snow, sunset, candy, village, firs, pole, sleigh, hearth, grid, dots };
 
 // Paints background `bg` (null for white paper) over the whole page, in page units.
 export function paintBackground(ctx, bg) {

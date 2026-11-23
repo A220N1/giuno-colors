@@ -152,7 +152,7 @@ canvas.thumb { aspect-ratio: 4 / 5; }
 .tool.more::after { content: ''; position: absolute; right: 5px; bottom: 5px; border: 4px solid transparent; border-right-color: var(--muted); border-bottom-color: var(--muted); }
 .tool canvas.sample.bg { width: 26px; height: 33px; border-radius: 5px; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .18); }
 .tool svg.scenery { width: 32px; height: 32px; stroke: none; }
-.pop.backgrounds { display: grid; grid-template-columns: repeat(5, 62px); gap: 8px 6px; }
+.pop.backgrounds { display: grid; grid-template-columns: repeat(5, 62px); gap: 8px 6px; max-height: calc(100% - 20px); overflow-y: auto; }
 .pop.backgrounds .tool { width: 62px; height: auto; padding: 5px 0 4px; gap: 4px; border-radius: 12px; }
 .pop.backgrounds canvas.sample.bg { width: 48px; height: 60px; border-radius: 6px; }
 .pop.backgrounds span { font-size: 10.5px; line-height: 1.15; color: var(--muted); text-align: center; }
@@ -188,6 +188,7 @@ canvas.thumb { aspect-ratio: 4 / 5; }
   .dot { width: 32px; height: 32px; }
   .tool { width: 46px; height: 46px; }
   .pop.grid { grid-template-columns: repeat(9, 48px); max-height: calc(100% - 20px); }
+  .pop.backgrounds { grid-template-columns: repeat(8, 62px); }
 }
 
 .lock { position: relative; }
