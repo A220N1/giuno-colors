@@ -1,7 +1,8 @@
 // The colouring screen: view, gestures, palette, numbers, magnifier and end of drawing.
 import { $, clamp, fmt, svgEl, showScreen, vibrate, inkFor, confirmDialog } from './util.js';
-import { instantiate, paint, analyse } from './drawings.js';
-import { getProgress, setProgress } from './store.js';
+import { instantiate, paint, analyse, shadeMarkup, glitterMarkup } from './drawings.js';
+import { getProgress, setProgress, getFillStyle, setFillStyle } from './store.js';
+import { sfx } from './sound.js';
 import { shareDrawing } from './share.js';
 import { t } from './i18n.js';
 import { perfScene, perfStart, perfStop, timed } from './perf.js';
@@ -47,12 +48,13 @@ export function openPlay(d, profileId, back, free = () => {}) {
     filled: new Set(getProgress(profileId, d.key).filter((i) => i < zones.length)),
     sel: -1, s: 1, tx: 0, ty: 0, fit: 1, W: 0, H: 0, left0: 0, top0: 0, anim: 0,
     drawn: { s: 0, tx: 0, ty: 0 }, still: 0,  // the view the drawing was last drawn at
+    style: getFillStyle(profileId), fx: svgEl('defs'), made: new Set(), scales: [],
   };
-  zones.forEach((z, i) => {
-    z.setAttribute('data-i', i);
-    if (P.filled.has(i)) paint(z, d.palette[colors[i]]);
-  });
+  svg.prepend(P.fx);
+  zones.forEach((z, i) => z.setAttribute('data-i', i));
   buildCheckers();
+  zones.forEach((z, i) => { if (P.filled.has(i)) paintZone(i); });
+  showFillStyle();
   buildPalette();  // before measuring: its rows take height from the drawing area
   measureStage();
   fitView();
@@ -63,9 +65,11 @@ export function openPlay(d, profileId, back, free = () => {}) {
   P.info.pos.forEach((p, i) => {
     if (P.filled.has(i) || (!p.hidden && p.r >= minR)) return;
     P.filled.add(i);
-    paint(zones[i], d.palette[colors[i]]);
+    paintZone(i);
     auto++;
   });
+  // a mystery page shows nothing of its picture until it is coloured; its lines come at the end
+  svg.classList.toggle('mystery', d.mystery && P.filled.size < zones.length);
   if (auto) buildPalette();  // same swatches, fresh counts
   buildLabels();
   updateProgress();
@@ -167,8 +171,38 @@ function buildCheckers() {
       P.checkers.push(c);
     }
     z.style.setProperty('--hl', `url(#${c.el.id})`);
+    P.scales.push(c.k);
   });
   P.svg.prepend(defs);
+}
+
+// A filled zone in the fill style of the child: plain, shaded from light to dark, or glittering. The
+// gradients and patterns are made as they are first needed; a pattern tiles in the coordinates of its
+// zone, so there is one per colour and per scale of zone, as for the checkerboard.
+function paintZone(i) {
+  const ci = P.colors[i], color = P.d.palette[ci];
+  let fill = color;
+  if (P.style !== 'flat') {
+    const k = P.style === 'glitter' ? P.scales[i] || 1 : 1;
+    const id = `${P.style}-${ci}-${String(k).replace('.', '_')}`;
+    if (!P.made.has(id)) {
+      P.made.add(id);
+      const size = Math.max(P.d.vb[2], P.d.vb[3]) / 14 / k;
+      const markup = P.style === 'shade' ? shadeMarkup(id, color) : glitterMarkup(id, color, size.toPrecision(4));
+      const doc = new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg">${markup}</svg>`, 'image/svg+xml');
+      P.fx.append(document.importNode(doc.documentElement.firstChild, true));
+    }
+    fill = `url(#${id})`;
+  }
+  paint(P.zones[i], color, fill);
+}
+
+const FILL_STYLES = ['flat', 'shade', 'glitter'];
+const FILL_NAMES = { flat: 'Couleurs unies', shade: 'Couleurs en dégradé', glitter: 'Couleurs à paillettes' };
+function showFillStyle() {
+  const b = $('#fill-style');
+  b.dataset.style = P.style;
+  b.setAttribute('aria-label', t(FILL_NAMES[P.style]));
 }
 
 function sizeCheckers() {
@@ -255,7 +289,8 @@ function updateProgress() {
 function fillZone(i) {
   const ci = P.colors[i];
   P.filled.add(i);
-  paint(P.zones[i], P.d.palette[ci]);
+  paintZone(i);
+  sfx('fill');
   if (P.labelEls[i]) { P.labelEls[i].el.remove(); P.labelEls[i] = null; }
   setProgress(P.profileId, P.d.key, [...P.filled]);
   vibrate(12);
@@ -266,7 +301,7 @@ function fillZone(i) {
   if (P.left[ci] === 0) {
     P.swatches[ci].classList.add('done');
     const next = nextColor(ci);
-    if (next >= 0) selectColor(next); else finish(true);
+    if (next >= 0) { sfx('chime'); selectColor(next); } else finish(true);
   }
 }
 
@@ -276,7 +311,8 @@ function finish(celebrate) {
   P.zones.forEach((z) => z.classList.remove('hl'));
   updateFindHint();
   $('#bravo').hidden = false;
-  if (celebrate) confetti(P.d.palette);
+  P.svg.classList.remove('mystery');
+  if (celebrate) { confetti(P.d.palette); sfx('bravo'); }
 }
 
 // Index of the unfilled zone drawn under a screen point, or -1.
@@ -294,7 +330,7 @@ function tapAt(clientX, clientY) {
   const i = nearZone(clientX - P.left0, clientY - P.top0, P.sel);
   if (i >= 0) return fillZone(i);
   // wrong number: show which colour that zone wants, without any penalty
-  if (hit >= 0) P.swatches[P.colors[hit]].classList.add('hint');
+  if (hit >= 0) { P.swatches[P.colors[hit]].classList.add('hint'); sfx('nope'); }
 }
 
 function longPress() {
@@ -490,12 +526,20 @@ function stopConfetti() {
 async function share() {
   if (!P) return;
   try {
-    await shareDrawing(P.d, P.filled);
+    await shareDrawing(P.d, P.filled, P.style);
   } catch (e) {
     console.error('share failed:', e);
   }
 }
 
+$('#fill-style').addEventListener('click', () => {
+  if (!P) return;
+  P.style = FILL_STYLES[(FILL_STYLES.indexOf(P.style) + 1) % FILL_STYLES.length];
+  setFillStyle(P.profileId, P.style);
+  for (const i of P.filled) paintZone(i);
+  showFillStyle();
+  sfx('pop');
+});
 $('#back').addEventListener('click', () => onBack());
 $('#bravo-back').addEventListener('click', () => onBack());
 $('#find').addEventListener('click', findZone);

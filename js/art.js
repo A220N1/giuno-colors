@@ -13,7 +13,9 @@
 //   { t: 'bg', k, c? }                              page background (see backgrounds.js), the last one counts
 //   { t: 'smudge', w, p: [...] }                    finger: spreads the paint of both layers along it
 //   { t: 'flakes', k: 'snow' | 'glitter', c, s, n }  n flakes over the page from a shake, placed from seed s
-//   { t: 'brick', k, c, x, y }                      building brick on the stud grid (see bricks.js)
+//   { t: 'brick', k, c, x, y, r? }                  building brick on the stud grid (see bricks.js)
+//   { t: 'unbrick', i }, { t: 'model', k }          a brick taken away, a model to build over
+// An operation may carry s, a stencil (see STENCILS): only what falls inside its shape is kept.
 // A line may carry k, its kind of brush (see brushes.js); without it, the felt pen.
 // The colour c is '#rrggbb' or 'rainbow': pastel hues turning along a stroke, or across a fill or shape.
 // Lines, eraser strokes and shapes may carry m (2, 4 or 6): drawn again as their mirror images around
@@ -22,8 +24,8 @@
 import { RAINBOW, rainbowAt, HEART, linePath, drawStroke, wallWidth, along, drips } from './brushes.js';
 import { stampImage, isAnimal, isNature } from './images.js';
 import { drawNature, drawFlakes } from './nature.js';
-import { backgroundOf, paintBackground } from './backgrounds.js';
-import { drawBrick } from './bricks.js';
+import { backgroundOf, paintBackground, SCRATCH_COAT, scratchPaint } from './backgrounds.js';
+import { drawBrick, removedOps } from './bricks.js';
 
 export const PAGE_W = 800, PAGE_H = 1000;
 export const SIZES = [6, 14, 28, 52, 84];
@@ -96,6 +98,47 @@ export const SHAPES = {
   star: starPath(),
   heart: HEART,
 };
+
+// Stencils: shapes in a unit box, laid in the middle of the page; paint only stays inside them.
+function petals() {
+  let d = '';
+  for (let i = 0; i < 6; i++) {
+    const a = i * Math.PI / 3, cx = 0.5 + 0.3 * Math.cos(a), cy = 0.5 + 0.3 * Math.sin(a);
+    d += `M${(cx - 0.2).toFixed(3)} ${cy.toFixed(3)}a.2 .2 0 1 0 .4 0a.2 .2 0 1 0 -.4 0Z`;
+  }
+  return d + 'M.28 .5a.22 .22 0 1 0 .44 0a.22 .22 0 1 0 -.44 0Z';
+}
+export const STENCILS = {
+  circle: SHAPES.circle,
+  heart: HEART,
+  star: SHAPES.star,
+  fir: 'M.5 0L.26 .3H.37L.13 .59H.26L0 .89H.43V1H.57V.89H1L.74 .59H.87L.63 .3H.74Z',
+  moon: 'M.78 .93A.47 .47 0 1 1 .78 .07A.36 .43 0 1 0 .78 .93Z',
+  butterfly: 'M.5 .3C.4 .05 .05 0 .03 .28C.02 .5 .25 .55 .45 .5C.2 .6 .1 .95 .3 .97C.42 .98 .48 .8 .5 .62C.52 .8 .58 .98 .7 .97C.9 .95 .8 .6 .55 .5C.75 .55 .98 .5 .97 .28C.95 0 .6 .05 .5 .3Z',
+  cat: 'M.12 .05L.36 .27C.45 .24 .55 .24 .64 .27L.88 .05L.9 .45C.96 .6 .93 .8 .78 .9C.62 1 .38 1 .22 .9C.07 .8 .04 .6 .1 .45Z',
+  flower: petals(),
+  fish: 'M.02 .5C.2 .15 .55 .12 .75 .42L.98 .2V.8L.75 .58C.55 .88 .2 .85 .02 .5Z',
+};
+export const STENCIL_BOX = [80, 180, 640, 640];
+const stencils = new Map();
+function stencilPath(k) {
+  let p = stencils.get(k);
+  if (!p) {
+    const [x, y, w, h] = STENCIL_BOX;
+    p = new Path2D();
+    p.addPath(new Path2D(STENCILS[k]), new DOMMatrix([w, 0, 0, h, x, y]));
+    stencils.set(k, p);
+  }
+  return p;
+}
+
+// Run draw() with the contexts clipped to the operation's stencil, if it has one.
+function stencilled(op, ctxs, draw) {
+  if (!op.s || !STENCILS[op.s]) { draw(); return; }
+  for (const ctx of ctxs) if (ctx) { ctx.save(); ctx.clip(stencilPath(op.s)); }
+  draw();
+  for (const ctx of ctxs) if (ctx) ctx.restore();
+}
 
 const cache = new WeakMap();  // op -> Path2D
 
@@ -286,6 +329,11 @@ function drawShape(ctx, op, path) {
 // Draw one operation on the fill and line layers (either may be null). `solid` draws lines plain and
 // whole, as the paint bucket sees them.
 export function drawOp(fills, lines, op, solid = false) {
+  if (op.t === 'bg' || op.t === 'unbrick' || op.t === 'model') return;  // not drawn here: see drawBackground, removedOps, draw.js
+  stencilled(op, [fills, lines], () => paintOp(fills, lines, op, solid));
+}
+
+function paintOp(fills, lines, op, solid) {
   if (op.t === 'fill') {
     if (!fills) return;
     fills.fillStyle = op.c === RAINBOW ? rainbowGradient(fills, loopsBox(op.r)) : op.c;
@@ -300,8 +348,6 @@ export function drawOp(fills, lines, op, solid = false) {
         ctx.restore();
       }
     });
-  } else if (op.t === 'bg') {
-    // drawn on its own layer, see drawBackground
   } else if (op.t === 'smudge') {
     if (!solid) smudgeOp(fills, lines, op);  // the paint bucket does not see it
   } else if (op.t === 'flakes') {
@@ -326,13 +372,13 @@ export function drawDripping(ctx, op, t, dropsOnly = false) {
 // A line of a piecewise kind draws its marks from `from` on; the next mark is returned.
 export function drawPreview(ctx, op, from = 0) {
   let next = 0;
-  mirrored(op, [ctx], () => {
-    if (op.t === 'erase') stroke(ctx, linePath(op.p), op.paper || '#fff', op.w);
+  stencilled(op, [ctx], () => mirrored(op, [ctx], () => {
+    if (op.t === 'erase') stroke(ctx, linePath(op.p), op.paper === 'scratch' ? scratchPaint(ctx) : op.paper || '#fff', op.w);
     else if (op.t === 'shape') drawShape(ctx, op, shapePath(op.k, op.b));
     else if (op.t === 'stamp') { ctx.save(); ctx.globalAlpha = 0.85; drawStamp(ctx, op); ctx.restore(); }
     else if (op.t === 'brick') { ctx.save(); ctx.globalAlpha = 0.8; drawBrick(ctx, op); ctx.restore(); }
     else next = drawStroke(ctx, op, from);
-  });
+  }));
   return next;
 }
 
@@ -350,10 +396,21 @@ export function clearCanvas(ctx, k) {
   ctx.clip();
 }
 
-export function renderLayers(fills, lines, ops, k) {
+// Both layers emptied, with the coat of a scratch card laid under everything to come.
+export function clearLayers(fills, lines, ops, k) {
   clearCanvas(fills, k);
   clearCanvas(lines, k);
-  for (const op of ops) drawOp(fills, lines, op);
+  const bg = backgroundOf(ops);
+  if (bg && bg.k === 'scratch') {
+    fills.fillStyle = SCRATCH_COAT;
+    fills.fillRect(0, 0, PAGE_W, PAGE_H);
+  }
+}
+
+export function renderLayers(fills, lines, ops, k) {
+  clearLayers(fills, lines, ops, k);
+  const gone = removedOps(ops);
+  for (const op of ops) if (!gone.has(op)) drawOp(fills, lines, op);
 }
 
 function makeCanvas(w, h) {
@@ -384,7 +441,8 @@ export function fillRegion(ops, x, y, base = null) {
   x = Math.floor(x); y = Math.floor(y);
   if (x < 0 || y < 0 || x >= W || y >= H) return null;
   const ctx = makeCanvas(W, H).getContext('2d', { willReadFrequently: true });
-  for (const op of ops) if (op.t !== 'fill') drawOp(null, ctx, op, true);
+  const gone = removedOps(ops);
+  for (const op of ops) if (op.t !== 'fill' && !gone.has(op)) drawOp(null, ctx, op, true);
   if (base) ctx.drawImage(base.canvas, ...base.box);
   const px = ctx.getImageData(0, 0, W, H).data;
   const open = new Uint8Array(W * H);
