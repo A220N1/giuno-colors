@@ -70,6 +70,7 @@ function puff(dur, freq, vol) {
 
 const SOUNDS = {
   pop: () => tone(420, 880, 0.09, 0.14),
+  pick: () => tone(520, 1040, 0.08, 0.12),
   click: () => { puff(0.03, 2600, 0.25); tone(1500, 900, 0.04, 0.06, 'square'); },
   unclick: () => { puff(0.04, 1400, 0.2); tone(500, 300, 0.07, 0.07, 'triangle'); },
   fill: () => tone(560, 330, 0.11, 0.12),

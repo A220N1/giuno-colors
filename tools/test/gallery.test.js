@@ -42,6 +42,29 @@ run(async () => {
   document.querySelectorAll('#profile-list .avatar')[0].click();
   await frames();
   check(!document.querySelector('#gallery').hidden, 'and a child picked again shows the gallery');
+  // the logo and the name of the app lead to the start screen; the name of the child fits in the header
+  document.querySelector('#gallery .head .logo').click();
+  await frames();
+  check(!document.querySelector('#profiles').hidden, 'the logo leads to the start screen');
+  document.querySelectorAll('#profile-list .avatar')[0].click();
+  await frames();
+  const head = document.querySelector('#gallery .head').getBoundingClientRect(), who = document.querySelector('#who').getBoundingClientRect();
+  check(who.right <= innerWidth + 0.5 && head.right <= innerWidth + 0.5 && document.documentElement.scrollWidth <= innerWidth + 1,
+    `the header fits the screen (${Math.round(who.right)} of ${innerWidth})`);
+  // session timer: set in the grown-ups' corner; when the time is up, the start screen and a message
+  const timerStore = await import('../js/store.js');
+  document.querySelector('#timer-row [data-min="10"]').click();
+  check(timerStore.getTimerEnd() > Date.now() + 9 * 60000 && !document.querySelector('#timer-off').hidden
+    && /10/.test(document.querySelector('#timer-left').textContent), 'the timer is set for ten minutes');
+  timerStore.setTimerEnd(Date.now() - 1000);
+  document.dispatchEvent(new Event('visibilitychange'));
+  await frames();
+  check(!document.querySelector('#timeup').hidden && !document.querySelector('#profiles').hidden && timerStore.getTimerEnd() === 0,
+    'time up: back to the start screen, with a message');
+  document.querySelector('#timeup-ok').click();
+  document.querySelectorAll('#profile-list .avatar')[0].click();
+  await frames();
+  check(document.querySelector('#timeup').hidden && !document.querySelector('#gallery').hidden, 'and the app can be used again');
   const cards = document.querySelectorAll('#cards .cards .card');
   check(cards.length === drawings.length, `one card per drawing (${cards.length})`);
   const secrets = [...document.querySelectorAll('#cards .card.secret')];
@@ -228,7 +251,7 @@ run(async () => {
   await sleep(700);
   const text = perf.perfReport();
   check(text.includes(`coloriage ${drawings[0].id}, un doigt : 1 ;`) && text.includes(`ouverture du coloriage ${drawings[0].id} : 1 ;`)
-    && text.includes(`numéros ${drawings[0].id} : 1 ;`), 'the drag and the opening are in the report');
+    && (text.includes(`numéros ${drawings[0].id} : 1 ;`) || text.includes(`carte des zones ${drawings[0].id} : 1 ;`)), 'the drag and the opening are in the report');
   check(/i\/s/.test(hud.textContent) && /lâcher/.test(hud.textContent), `the meter shows the drag (${hud.textContent.split('\n')[1]})`);
   note(text);
   document.querySelector('#back').click();

@@ -15,6 +15,7 @@ import { newArtId } from './artstore.js';
 import { lang, setLanguage, translatePage } from './i18n.js';
 import { soundOn, setSoundOn, sfx } from './sound.js';
 import { navlog } from './navlog.js';
+import { startTimer } from './timer.js';
 
 // Screens map to the address: '' gallery, '#profils' profile choice, '#<drawing id>' colouring,
 // '#libre/<id>' free drawing.
@@ -78,6 +79,14 @@ function openProfiles() { show('profils'); }
 function openDrawing(d) { show(encodeURIComponent(d.id)); }
 function openArt(id) { show('libre/' + encodeURIComponent(id)); }
 function goBack() { show(up); }
+
+// The start screen: who is colouring. The logo and the name of the app lead there from the gallery,
+// and so does the session timer once the time is up.
+function goHome() {
+  startupPick = true;
+  show('');
+}
+for (const e of document.querySelectorAll('#gallery .head .logo, #gallery .head h1')) e.addEventListener('click', goHome);
 
 // The working entry, added after the first touch if nothing was opened yet.
 function arm() {
@@ -157,3 +166,4 @@ translatePage();
 try { await loadImported(); } catch (e) { console.error('imported pages not loaded:', e); }
 try { await loadStickers(); preloadStamps(); showStickers(); } catch (e) { console.error('personal stickers not loaded:', e); }
 route();
+startTimer(goHome);

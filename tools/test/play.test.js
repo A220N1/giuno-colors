@@ -9,6 +9,7 @@ run(async () => {
   const { renderPng } = await import('../js/share.js');
   await import('../js/main.js');
   play.testing.instant = true;
+  play.testing.snap = false;  // gestures move the drawing itself, but where the gesture picture is tried below
   const stage = document.querySelector('#stage');
   check(drawings.length > 0, 'drawings are loaded');
   note(`${drawings.length} drawings at ${innerWidth} x ${innerHeight}`);
@@ -126,6 +127,28 @@ run(async () => {
     check(P.filled.size === P.zones.length, `${d.id}: every zone filled (${P.filled.size}/${P.zones.length})`);
     if (d.mystery) check(!P.svg.classList.contains('mystery'), `${d.id}: the mystery page shows once coloured`);
     if (n === 1) {
+      // the gesture picture: once made, a drag moves it in place of the drawing, which comes back when the finger lifts
+      await play.debug.makeSnap();
+      const snap = document.querySelector('#stage canvas.snap');
+      const fire2 = (type, x, y) => stage.dispatchEvent(new PointerEvent(type, { pointerId: 1, pointerType: 'touch', isPrimary: true,
+        clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0, buttons: type === 'pointerup' ? 0 : 1 }));
+      const mx = sr.left + sr.width / 2, my = sr.top + sr.height / 2;
+      check(P.snap.ok && snap.width > 100, `${d.id}: a picture of the page is made for gestures (${snap.width} x ${snap.height})`);
+      fire2('pointerdown', mx, my);
+      fire2('pointermove', mx + 30, my + 20);
+      fire2('pointermove', mx + 60, my + 40);
+      check(snap.style.visibility === 'visible' && P.svg.style.visibility === 'hidden' && /translate/.test(snap.style.transform) && !P.svg.style.transform,
+        `${d.id}: a drag moves the picture, the drawing is put aside`);
+      // the picture lies where the drawing would: its top left corner at the same point of the screen
+      const sb = snap.getBoundingClientRect();
+      check(Math.abs(sb.left - (sr.left + P.tx + d.vb[0] * P.s)) < 0.6 && Math.abs(sb.top - (sr.top + P.ty + d.vb[1] * P.s)) < 0.6
+        && Math.abs(sb.width - d.vb[2] * P.s) < 1.5, `${d.id}: the picture lies exactly where the drawing is`);
+      fire2('pointerup', mx + 60, my + 40);
+      check(snap.style.visibility === 'hidden' && P.svg.style.visibility === '', `${d.id}: the drawing is back when the finger lifts`);
+      play.debug.setView(P.fit, 0, 0);
+      // opened again, the page takes its numbers from this device, and maps its zones a moment later
+      check(localStorage.getItem('giunocache.pos.' + d.key), `${d.id}: the places of the numbers are kept`);
+
       // fill styles: shaded, then glitter, then plain again; kept for the child
       const fillOf = () => getComputedStyle(P.zones[0]).fill;
       const flat = fillOf();

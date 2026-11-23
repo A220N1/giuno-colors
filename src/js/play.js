@@ -18,8 +18,12 @@ const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></
 const CHECKER_PX = 5;      // squares of the checkerboard on the zones left in the chosen colour, on screen
 const CHECKER_GREY = '#d4d4d4';
 const STILL_MS = 250;      // fingers resting this long on a moved view: it is drawn sharp again
+const SNAP_IDLE_MS = 700;  // the picture shown during gestures is made again this long after the last change
+const SNAP_MAX_PX = 2200;  // longest side of that picture, in screen pixels
+const LATER_MS = 450;      // the map of the zones is worked out this long after a page opens from saved numbers
+const POS_CACHE = 'giunocache.pos.';  // number places per drawing, kept on this device (not part of a backup)
 
-export const testing = { instant: false };  // tests skip the zoom animation
+export const testing = { instant: false, snap: true };  // tests skip the zoom animation, and may do without the gesture picture
 const stage = $('#stage');
 let P = null;           // the drawing being coloured
 let onBack = () => {};
@@ -35,7 +39,7 @@ export function openPlay(d, profileId, back, free = () => {}) {
   showScreen('play');
   $('#bravo').hidden = true;
   const svg = svgEl('svg');
-  const world = svgEl('g');
+  const world = svgEl('g', { class: 'world' });
   const { g, zones, colors } = instantiate(d);
   const labels = svgEl('g', { class: 'labels' });
   const marks = svgEl('g', { class: 'marks' });
@@ -49,6 +53,7 @@ export function openPlay(d, profileId, back, free = () => {}) {
     sel: -1, s: 1, tx: 0, ty: 0, fit: 1, W: 0, H: 0, left0: 0, top0: 0, anim: 0,
     drawn: { s: 0, tx: 0, ty: 0 }, still: 0,  // the view the drawing was last drawn at
     style: getFillStyle(profileId), fx: svgEl('defs'), made: new Set(), scales: [],
+    snap: { canvas: snapCanvas(), ok: false, on: false, q: 1, timer: 0, turn: 0 }, later: 0,
   };
   svg.prepend(P.fx);
   zones.forEach((z, i) => z.setAttribute('data-i', i));
@@ -58,7 +63,17 @@ export function openPlay(d, profileId, back, free = () => {}) {
   buildPalette();  // before measuring: its rows take height from the drawing area
   measureStage();
   fitView();
-  P.info = timed(`numéros ${d.id}`, () => analyse(d, g, zones));
+  // where the numbers go: read from this device when the page was opened before, and the map of the
+  // zones (for taps that just miss) worked out a moment later; else worked out now, and kept
+  const saved = savedPlaces(d, zones.length);
+  if (saved) {
+    P.info = { pos: saved, lab: null, k: 1, W: 0, H: 0 };
+    const p = P;
+    P.later = setTimeout(() => { if (P === p) mapZones(); }, LATER_MS);
+  } else {
+    P.info = timed(`numéros ${d.id}`, () => analyse(d, g, zones));
+    savePlaces(d, P.info.pos);
+  }
   // a zone nobody can see or touch would keep the drawing from ever being finished
   const minR = AUTO_FILL_PX / (P.fit * MAX_ZOOM);
   let auto = 0;
@@ -75,13 +90,131 @@ export function openPlay(d, profileId, back, free = () => {}) {
   updateProgress();
   const first = nextColor(-1);
   if (first >= 0) selectColor(first); else finish(false);
+  staleSnap();
   perfStop(`ouverture du coloriage ${d.id}`, t0);
+}
+
+// Places of the numbers of a drawing, kept from one opening to the next: [x, y, r, hidden] per zone.
+const places = new Map();
+function savedPlaces(d, n) {
+  let flat = places.get(d.key);
+  if (!flat) {
+    try { flat = JSON.parse(localStorage.getItem(POS_CACHE + d.key) || 'null'); } catch (e) { flat = null; }
+  }
+  if (!Array.isArray(flat) || flat.length !== 4 * n) return null;
+  places.set(d.key, flat);
+  return Array.from({ length: n }, (_, i) => {
+    const p = { x: flat[4 * i], y: flat[4 * i + 1], r: flat[4 * i + 2] };
+    if (flat[4 * i + 3]) p.hidden = true;
+    return p;
+  });
+}
+function savePlaces(d, pos) {
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  const flat = pos.flatMap((p) => [r3(p.x), r3(p.y), r3(p.r), p.hidden ? 1 : 0]);
+  places.set(d.key, flat);
+  try { localStorage.setItem(POS_CACHE + d.key, JSON.stringify(flat)); } catch (e) { /* no room: worked out again next time */ }
+}
+
+// The map of the zones of a page opened from saved numbers. The lines of a mystery page count as
+// they will show in the end.
+function mapZones() {
+  const mystery = P.svg.classList.contains('mystery');
+  P.svg.classList.remove('mystery');
+  const info = timed(`carte des zones ${P.d.id}`, () => analyse(P.d, P.art, P.zones));
+  P.svg.classList.toggle('mystery', mystery);
+  P.info = { ...info, pos: P.info.pos };
+}
+
+// During a gesture the page is shown as a picture of itself, moved and stretched by the phone at no
+// cost, where moving the drawing itself made zooming slow on phones. The picture is made ahead, in
+// the quiet after each change; the drawing comes back, sharp, when the fingers lift or rest.
+function snapCanvas() {
+  let c = stage.querySelector(':scope > canvas.snap');
+  if (!c) {
+    c = document.createElement('canvas');
+    c.className = 'snap';
+    stage.prepend(c);
+  }
+  c.style.visibility = 'hidden';
+  return c;
+}
+
+// The picture no longer shows the page as it is: gestures move the drawing itself until it is made again.
+function staleSnap() {
+  if (!P) return;
+  P.snap.ok = false;
+  freshSnap();
+}
+
+// A sharper or newer picture is wanted, once things are quiet; the one in hand still serves.
+function freshSnap() {
+  if (!P || !testing.snap) return;
+  clearTimeout(P.snap.timer);
+  const p = P;
+  P.snap.timer = setTimeout(() => {
+    if (P !== p) return;
+    if (pointers.size || p.snap.on) { freshSnap(); return; }
+    makeSnap().catch((e) => console.error('gesture picture not made:', e));
+  }, SNAP_IDLE_MS);
+}
+
+const LINE = () => getComputedStyle(document.documentElement).getPropertyValue('--line').trim() || '#6b6b6b';
+
+async function makeSnap() {
+  const p = P, turn = ++p.snap.turn, t0 = perfStart();
+  const [vx, vy, vw, vh] = p.d.vb, dpr = window.devicePixelRatio || 1;
+  const q = Math.min(p.s * dpr, SNAP_MAX_PX / Math.max(vw, vh));
+  const w = Math.max(1, Math.round(vw * q)), h = Math.max(1, Math.round(vh * q));
+  // a copy of the page as it stands, carrying in each element what the style sheet gives it here
+  const copy = p.svg.cloneNode(true);
+  copy.removeAttribute('style');
+  copy.removeAttribute('class');
+  copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  copy.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
+  copy.setAttribute('width', w);
+  copy.setAttribute('height', h);
+  copy.querySelector(':scope > .world').removeAttribute('transform');
+  const mystery = p.svg.classList.contains('mystery'), line = LINE(), sw = (1.6 * q / p.s).toFixed(2);
+  copy.querySelector('.marks').remove();
+  if (mystery) for (const e of copy.querySelectorAll('.art :not(g):not([data-c])')) e.remove();
+  copy.querySelectorAll('[data-c]').forEach((z, i) => {
+    const live = p.zones[i];
+    let fill = mystery ? '#dedede' : '#ffffff', stroke = mystery ? '#dedede' : line;
+    if (live.classList.contains('done')) { fill = live.style.getPropertyValue('--c'); stroke = live.style.getPropertyValue('--s') || fill; }
+    else if (live.classList.contains('hl')) fill = live.style.getPropertyValue('--hl');
+    z.setAttribute('style', `fill:${fill};stroke:${stroke};stroke-width:${sw}px;vector-effect:non-scaling-stroke`);
+  });
+  for (const t of copy.querySelectorAll('.labels text')) {
+    if (t.classList.contains('off')) t.remove();
+    else t.setAttribute('style', 'font-family:system-ui,sans-serif;font-weight:600;fill:#4a4a4a;text-anchor:middle;dominant-baseline:central');
+  }
+  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: 'image/svg+xml' }));
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    if (P !== p || p.snap.turn !== turn || pointers.size) { if (P === p && p.snap.turn === turn) freshSnap(); return; }
+    const c = p.snap.canvas;
+    c.width = w; c.height = h;
+    c.style.width = w / dpr + 'px';
+    c.style.height = h / dpr + 'px';
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    p.snap.q = q / dpr;  // points of the screen per unit of the drawing, in the picture at its own size
+    p.snap.ok = true;
+    perfStop('image de geste', t0, `${w} x ${h}`);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 export function leavePlay() {
   if (!P) return;
   cancelAnimationFrame(P.anim);
   clearTimeout(P.still);
+  clearTimeout(P.snap.timer);
+  clearTimeout(P.later);
+  P.snap.canvas.style.visibility = 'hidden';
   P = null;
   stopConfetti();
   $('#find').classList.remove('hint');
@@ -111,9 +244,18 @@ function setView(s, tx, ty, moving = false) {
   P.s = s; P.tx = tx; P.ty = ty;
   clearTimeout(P.still);
   if (!moving) { drawView(); return; }
+  P.still = setTimeout(drawView, STILL_MS);
+  if (P.snap.ok) {  // the picture of the page moves in its place
+    if (!P.snap.on) {
+      P.snap.on = true;
+      P.snap.canvas.style.visibility = 'visible';
+      P.svg.style.visibility = 'hidden';
+    }
+    P.snap.canvas.style.transform = `translate(${tx + vx * s}px, ${ty + vy * s}px) scale(${s / P.snap.q})`;
+    return;
+  }
   const d = P.drawn, r = s / d.s;
   P.svg.style.transform = `translate(${tx - r * d.tx}px, ${ty - r * d.ty}px) scale(${r})`;
-  P.still = setTimeout(drawView, STILL_MS);
 }
 
 function drawView() {
@@ -121,11 +263,18 @@ function drawView() {
   clearTimeout(P.still);
   P.svg.style.transform = '';
   const d = P.drawn;
+  if (P.s !== d.s || P.tx !== d.tx || P.ty !== d.ty) {
+    const zoomed = P.s !== d.s;
+    P.drawn = { s: P.s, tx: P.tx, ty: P.ty };
+    P.world.setAttribute('transform', `matrix(${P.s} 0 0 ${P.s} ${P.tx} ${P.ty})`);
+    if (zoomed) { updateLabelVisibility(); sizeCheckers(); freshSnap(); }
+  }
+  if (P.snap.on) {
+    P.snap.on = false;
+    P.svg.style.visibility = '';
+    P.snap.canvas.style.visibility = 'hidden';
+  }
   if (P.s === d.s && P.tx === d.tx && P.ty === d.ty) return;
-  const zoomed = P.s !== d.s;
-  P.drawn = { s: P.s, tx: P.tx, ty: P.ty };
-  P.world.setAttribute('transform', `matrix(${P.s} 0 0 ${P.s} ${P.tx} ${P.ty})`);
-  if (zoomed) { updateLabelVisibility(); sizeCheckers(); }
   scheduleFindHint();
 }
 
@@ -278,6 +427,7 @@ function selectColor(ci) {
   }
   P.zones.forEach((z, i) => z.classList.toggle('hl', P.colors[i] === ci && !P.filled.has(i)));
   scheduleFindHint();
+  staleSnap();
 }
 
 function updateProgress() {
@@ -290,6 +440,7 @@ function fillZone(i) {
   const ci = P.colors[i];
   P.filled.add(i);
   paintZone(i);
+  staleSnap();
   sfx('fill');
   if (P.labelEls[i]) { P.labelEls[i].el.remove(); P.labelEls[i] = null; }
   setProgress(P.profileId, P.d.key, [...P.filled]);
@@ -312,6 +463,7 @@ function finish(celebrate) {
   updateFindHint();
   $('#bravo').hidden = false;
   P.svg.classList.remove('mystery');
+  staleSnap();
   if (celebrate) { confetti(P.d.palette); sfx('bravo'); }
 }
 
@@ -347,6 +499,7 @@ function longPress() {
 // Nearest unfilled zone of colour `want` (any colour when -1) within reach of a stage point.
 function nearZone(sx, sy, want) {
   const { k, W, H, lab } = P.info;
+  if (!lab) return -1;  // the map of the zones is not made yet
   const [vx, vy] = P.d.vb;
   const px = ((sx - P.tx) / P.s - vx) * k, py = ((sy - P.ty) / P.s - vy) * k;
   const R = TAP_REACH_PX / P.s * k;
@@ -537,6 +690,7 @@ $('#fill-style').addEventListener('click', () => {
   P.style = FILL_STYLES[(FILL_STYLES.indexOf(P.style) + 1) % FILL_STYLES.length];
   setFillStyle(P.profileId, P.style);
   for (const i of P.filled) paintZone(i);
+  staleSnap();
   showFillStyle();
   sfx('pop');
 });
@@ -557,5 +711,5 @@ $('#reset').addEventListener('click', async () => {
 
 // Hooks for the automated tests.
 export const debug = {
-  state: () => P, longPress, findZone, updateFindHint, selectColor, nextColor, finish, onStageResize, setView,
+  state: () => P, longPress, findZone, updateFindHint, selectColor, nextColor, finish, onStageResize, setView, makeSnap, mapZones,
 };

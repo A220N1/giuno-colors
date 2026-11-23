@@ -37,6 +37,7 @@ run(async () => {
   const segment = (x0, y0, x1, y1, n = 60) => Array.from({ length: n + 1 }, (_, i) =>
     at(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n));
   const pickTool = (k) => $(`#draw .tool[data-tool="${k}"]`).click();
+  const setSize = (i) => { draw.debug.tool.size = i; };
   const pickShape = (k) => { pickTool('shape'); $(`#draw-pop [data-shape="${k}"]`).click(); };
   const pickColor = (c) => $(`#draw-colors [data-color="${c}"]`).click();
   const bucket = (c, x, y) => { pickTool('bucket'); pickColor(c); tap(stage, ...at(x, y)); };
@@ -126,9 +127,7 @@ run(async () => {
   check(!$('#redo').disabled, 'redo available after undo');
   pickColor(GREEN);
   check(draw.debug.tool.kind === 'brush', 'a colour after the eraser goes back to the brush');
-  $('#size').click();
-  check($('#draw-pop').querySelectorAll('[data-size]').length === art.SIZES.length && art.SIZES.length === 5, 'five line sizes');
-  $('#draw-pop [data-size="3"]').click();
+  setSize(3);
   drag(stage, segment(30, 960, 770, 960));
   check(A.ops[A.ops.length - 1].w === art.SIZES[3], 'thick brush');
   check($('#redo').disabled, 'a new stroke clears redo');
@@ -160,8 +159,7 @@ run(async () => {
   const R = draw.debug.state();
   pickColor(art.RAINBOW);
   check(draw.debug.tool.color === art.RAINBOW && $('#draw-colors [data-color="rainbow"]').classList.contains('sel'), 'rainbow picked');
-  $('#size').click();
-  $('#draw-pop [data-size="2"]').click();
+  setSize(2);
   drag(stage, segment(60, 200, 740, 200, 80));
   check(draw.debug.sparkles.count() > 10, `stars along the rainbow stroke (${draw.debug.sparkles.count()})`);
   check(R.ops.length === 1 && R.ops[0].c === art.RAINBOW, 'rainbow stroke recorded');
@@ -208,8 +206,7 @@ run(async () => {
   check(!$('#draw-pop').hidden && $('#draw-pop').querySelectorAll('[data-mirror]').length === 4, 'mirror menu with four modes');
   $('#draw-pop [data-mirror="2"]').click();
   check(draw.debug.tool.mirror === 2 && $('.sheet .guides line'), 'left and right mirror on, its axis shown');
-  $('#size').click();
-  $('#draw-pop [data-size="1"]').click();
+  setSize(1);
   pickTool('brush');
   pickColor(BLACK);
   drag(stage, ring(200, 400, 100));
@@ -335,7 +332,7 @@ run(async () => {
   const sized = K.ops[K.ops.length - 1].b;
   check(sized[2] === 150, 'a drag sizes the sticker');
   check(sized[1] + sized[3] < 840 && Math.abs(sized[0] + 75 - 230) <= 1, 'under a finger the sticker sits above it, not under it');
-  check($('#draw .tool[data-tool="stamp"] .sticker-badge'), 'the sticker button shows a peeling sticker');
+  check($('#draw .tool[data-tool="stamp"] img.sample, #draw .tool[data-tool="stamp"] canvas.sample'), 'the sticker button shows the sticker in use');
 
   // bricks: 18 pieces, snapped to the stud grid, a second one resting on the first
   const bricks = await import('../js/bricks.js');
@@ -377,6 +374,7 @@ run(async () => {
   await hold(stage, ...at(rx + rw / 2, ry + rh / 2), 520);
   const moved = K.ops[K.ops.length - 1];
   check(moved.t === 'brick' && moved.k === 'b2' && K.ops[moved.r] === b2 && bricks.liveBricks(K.ops).length === 4, 'a brick held is picked up and laid again');
+  check(!('lift' in moved) && !K.lift, 'and it is no longer carried');
   $('#undo').click();
   // a model shows pale under the bricks; the baseplate is a background of its own
   pickTool('brick');
@@ -393,11 +391,28 @@ run(async () => {
   for (let i = 0; i < 4; i++) $('#undo').click();
   check($('.guides .grid') !== null && K.ops[K.ops.length - 1].t !== 'brick', 'the bricks are undone');
 
-  // a stencil keeps the paint inside its shape
-  $('#stencil').click();
-  check(pop.querySelectorAll('[data-stencil]').length === 10, 'nine stencils, or none');
+  // line sizes sit in the brush menu and in the eraser's, opened by a second tap of the tool
+  pickTool('brush');
+  if (pop.hidden) pickTool('brush');
+  check(pop.querySelectorAll('[data-size]').length === art.SIZES.length && art.SIZES.length === 5 && pop.querySelectorAll('[data-brush]').length === art.BRUSHES.length,
+    'the brush menu holds the kinds of brush and five line sizes');
+  pop.querySelector('[data-size="4"]').click();
+  check(draw.debug.tool.size === 4 && pop.hidden, 'a size picked in the brush menu');
+  pickTool('eraser');
+  check(pop.hidden, 'the eraser erases at once');
+  pickTool('eraser');
+  check(pop.querySelectorAll('[data-size]').length === 5 && !pop.querySelector('[data-brush]'), 'a second tap opens its sizes');
+  pop.querySelector('[data-size="1"]').click();
+  check(draw.debug.tool.size === 1 && draw.debug.tool.kind === 'eraser', 'a size picked in the eraser menu');
+  check(document.querySelectorAll('#draw .toolrow .tool').length === 9, 'nine tools on one row');
+  const tops = [...document.querySelectorAll('#draw .toolrow .tool')].map((b) => Math.round(b.getBoundingClientRect().top));
+  check(new Set(tops).size === 1, 'the tools stand on a single row');
+
+  // a stencil, picked in the menu of the shapes, keeps the paint inside its shape
+  pickTool('shape');
+  check(pop.querySelectorAll('[data-shape]').length === 5 && pop.querySelectorAll('[data-stencil]').length === 9, 'five shapes and nine stencils in one menu');
   pop.querySelector('[data-stencil="circle"]').click();
-  check($('.guides .veil') && $('#stencil').classList.contains('on'), 'the stencil veils the page around its shape');
+  check($('.guides .veil') && draw.debug.tool.stencil === 'circle' && draw.debug.tool.kind === 'brush', 'the stencil veils the page around its shape, brush in hand');
   pickBrush('marker');
   pickColor(BLUE);
   const beforeStencil = [pixel(flat(), 400, 500), pixel(flat(), 40, 500)];
@@ -405,9 +420,11 @@ run(async () => {
   const cut = K.ops[K.ops.length - 1];
   check(cut.s === 'circle' && pixel(flat(), 400, 500) === BLUE && pixel(flat(), 40, 500) === beforeStencil[1], 'paint only stays inside the stencil');
   $('#undo').click();
-  $('#stencil').click();
+  pickTool('shape');
+  check(pop.querySelectorAll('[data-stencil]').length === 10, 'with a stencil on the page, a cross to put it away');
   pop.querySelector('[data-stencil=""]').click();
-  check(!$('.guides .veil') && !$('#stencil').classList.contains('on'), 'the stencil put away');
+  check(!$('.guides .veil') && !draw.debug.tool.stencil, 'the stencil put away');
+  setSize(1);
 
   // sounds: none of them breaks anything, and they can be turned off
   const sound = await import('../js/sound.js');
@@ -443,13 +460,11 @@ run(async () => {
   // (the finger is switched off while it is made faster: then its drawing is left out)
   if (!$('#draw .tool[data-tool="smudge"]').hidden) {
   pickBrush('marker');
-  $('#size').click();
-  $('#draw-pop [data-size="3"]').click();
+  setSize(3);
   drag(stage, segment(250, 300, 250, 700, 20));
   check(pixel(flat(), 330, 500) === WHITE, 'white beside the red line');
   pickTool('smudge');
-  $('#size').click();
-  $('#draw-pop [data-size="2"]').click();
+  setSize(2);
   drag(stage, segment(240, 500, 420, 500, 30));
   const sm = K.ops[K.ops.length - 1];
   const reddish = (c) => c !== WHITE && parseInt(c.slice(1, 3), 16) > parseInt(c.slice(5, 7), 16) + 20;
@@ -486,17 +501,24 @@ run(async () => {
   const sea = pixel(flat(), 400, 400);
   check(parseInt(sea.slice(5, 7), 16) > parseInt(sea.slice(1, 3), 16) + 60, `sea background is blue (${sea})`);
   $('#undo').click();
-  // a scratch card: black all over, the eraser in hand, bright colours where it scratches
+  // a scratch card: black all over; the brush scratches and shows bright colours, the eraser covers again
   const sizeBefore = draw.debug.tool.size;
   $('#draw-bg').click();
+  const cardTile = $('#draw-pop [data-bg="scratch"] canvas'), cardPx = cardTile.getContext('2d').getImageData(2, 2, 1, 1).data;
+  check(cardPx[0] < 40 && cardPx[1] < 40, 'the scratch card shows black on its button');
   $('#draw-pop [data-bg="scratch"]').click();
-  check(draw.debug.tool.kind === 'eraser' && pixel(flat(), 795, 995) === '#17171d', 'a scratch card is black, with the eraser in hand');
+  check(draw.debug.tool.kind === 'brush' && pixel(flat(), 795, 995) === '#17171d' && $('#draw-colors').classList.contains('off'),
+    'a scratch card is black, brush in hand, colours set aside');
   drag(stage, segment(700, 980, 790, 980, 10));
   const scratched = pixel(flat(), 760, 980);
-  check(scratched !== '#17171d' && scratched !== WHITE, `scratching shows the colours under the coat (${scratched})`);
+  check(K.ops[K.ops.length - 1].t === 'erase' && scratched !== '#17171d' && scratched !== WHITE, `the brush scratches the coat off (${scratched})`);
+  pickTool('eraser');
+  drag(stage, segment(700, 980, 790, 980, 10));
+  check(pixel(flat(), 760, 980) === '#17171d', 'the eraser lays the coat again');
   $('#undo').click();
   $('#undo').click();
-  check(pixel(flat(), 795, 995) !== '#17171d', 'the scratch card undone');
+  $('#undo').click();
+  check(pixel(flat(), 795, 995) !== '#17171d' && !$('#draw-colors').classList.contains('off'), 'the scratch card undone');
   pickTool('brush');
   draw.debug.tool.size = sizeBefore;
 
@@ -571,8 +593,7 @@ run(async () => {
   $('#cards .art-new').click();
   await waitFor(opened, 'drawing screen');
   const B = draw.debug.state();
-  $('#size').click();
-  $('#draw-pop [data-size="1"]').click();
+  setSize(1);
   pickColor(BLACK);
   pickShape('square');
   drag(stage, segment(200, 520, 600, 850, 8));
