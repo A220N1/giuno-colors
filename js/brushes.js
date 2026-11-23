@@ -8,7 +8,9 @@ export const RAINBOW_LEN = 600;  // page units of stroke for one full turn of th
 export const rainbowAt = (turn) => `hsl(${Math.round((((turn % 1) + 1) % 1) * 360)}, 88%, 76%)`;
 export const HEART = 'M.5 .24C.42 .06 .27 0 .18 0 .07 0 0 .1 0 .26 0 .52 .26 .74 .5 1 .74 .74 1 .52 1 .26 1 .1 .93 0 .82 0 .73 0 .58 .06 .5 .24Z';
 
-export const BRUSHES = ['marker', 'pen', 'pencil', 'pastel', 'paint', 'glitter', 'neon', 'hearts', 'stars', 'bubbles', 'drip', 'grass', 'clouds'];
+// The kinds offered in the menu. Pen, pencil and paintbrush are no longer among them, but the drawings
+// made with them are still drawn.
+export const BRUSHES = ['marker', 'pastel', 'glitter', 'neon', 'hearts', 'stars', 'bubbles', 'drip', 'grass', 'clouds'];
 export const BRUSH_NAMES = {
   marker: 'Feutre', pen: 'Stylo', pencil: 'Crayon', pastel: 'Pastel', paint: 'Pinceau',
   glitter: 'Paillettes', neon: 'Néon', hearts: 'Cœurs', stars: 'Étoiles filantes', bubbles: 'Bulles', drip: 'Peinture qui coule',
@@ -360,20 +362,39 @@ function bubbles(ctx, op, from) {
   });
 }
 
-// Paint running down from a felt-pen line: drops at places along it, straight down the page, each
-// `grow` of its full length (the drops run for a moment after the stroke is drawn).
-export function drips(ctx, op, grow = 1) {
+// Paint running down from a felt-pen line. Each drop lives its own life: it swells under the line,
+// lets go, runs fast, then slows and stops as its paint runs out, leaving a thin trail above a round
+// bead. Most stay short and a few run far; the heavy ones start sooner and run longer.
+// `t` is the time since the stroke, 0 to 1 over the whole run; at 1 every drop has stopped.
+const SWELL = 0.2;  // share of a drop's life spent swelling before it lets go
+export function drips(ctx, op, t = 1) {
   const seed = seedOf(op), colour = colourOf(op), w = op.w;
-  along(op.p, Math.max(4, w * 0.8), 0, (k, x, y, nx, ny, len) => {
+  along(op.p, Math.max(5, w * 0.9), 0, (k, x, y, nx, ny, len) => {
     if (rnd(seed, k, 0) > 0.4) return;
-    const hw = Math.max(1, w * (0.13 + 0.12 * rnd(seed, k, 1)));
-    const x0 = x + (rnd(seed, k, 2) - 0.5) * w * 0.4, y1 = y + w * 0.25 + w * (0.6 + 3 * rnd(seed, k, 3) ** 2) * grow;
+    const heavy = rnd(seed, k, 3) ** 3;
+    const length = w * (0.35 + 5.5 * heavy + 0.9 * rnd(seed, k, 4));
+    const start = 0.4 * rnd(seed, k, 5) * (1 - 0.6 * heavy);
+    const life = 0.2 + 0.3 * Math.min(1, length / (5 * w)) + 0.1 * rnd(seed, k, 6);
+    const p = Math.min(1, (t - start) / life);
+    if (p <= 0) return;
+    const swell = Math.min(1, p / SWELL);
+    const run = p <= SWELL ? 0 : 1 - (1 - (p - SWELL) / (1 - SWELL)) ** 2.6;
+    const hw = Math.max(1, w * (0.1 + 0.07 * rnd(seed, k, 1) + 0.1 * heavy));
+    const bead = hw * (1.25 + 0.4 * rnd(seed, k, 7)) * (0.45 + 0.55 * swell);
+    const neck = hw * (1 - 0.3 * run);  // the trail thins as the drop stretches it
+    const x0 = x + (rnd(seed, k, 2) - 0.5) * w * 0.4;
+    const top = y + w * 0.2, tip = y + w * 0.5 + bead * 0.5 * swell + length * run;
+    const shoulder = Math.max(top, tip - bead * 1.7), foot = Math.min(top + w * 0.5, shoulder);
     ctx.fillStyle = css(colour(len));
     ctx.beginPath();
-    ctx.moveTo(x0 - hw, y);
-    ctx.lineTo(x0 - hw * 0.85, y1);
-    ctx.arc(x0, y1, hw * 1.2, Math.PI, 0, true);
-    ctx.lineTo(x0 + hw, y);
+    ctx.moveTo(x0 - hw * 1.7, top);
+    ctx.quadraticCurveTo(x0 - neck, top, x0 - neck, foot);
+    ctx.lineTo(x0 - neck, shoulder);
+    ctx.quadraticCurveTo(x0 - bead * 1.05, tip - bead * 1.1, x0 - bead, tip);
+    ctx.arc(x0, tip, bead, Math.PI, 0, true);
+    ctx.quadraticCurveTo(x0 + bead * 1.05, tip - bead * 1.1, x0 + neck, shoulder);
+    ctx.lineTo(x0 + neck, foot);
+    ctx.quadraticCurveTo(x0 + neck, top, x0 + hw * 1.7, top);
     ctx.fill();
   });
 }

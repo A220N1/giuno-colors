@@ -143,11 +143,23 @@ canvas.thumb { aspect-ratio: 4 / 5; }
 .tools { display: grid; justify-items: center; gap: 8px; padding: 8px 8px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid #eee; background: #fafafa; }
 .toolrow { display: flex; gap: 6px; }
 .tool { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; }
-.toolrow .tool { width: clamp(34px, calc((100vw - 72px) / 9), 52px); height: clamp(34px, calc((100vw - 72px) / 9), 52px); }
+.toolrow { gap: clamp(3px, 1vw, 6px); }
+.toolrow .tool { width: clamp(32px, calc((100vw - 16px - 9 * clamp(3px, 1vw, 6px)) / 10), 52px); height: clamp(32px, calc((100vw - 16px - 9 * clamp(3px, 1vw, 6px)) / 10), 52px); }
 .toolrow .tool > canvas.sample, .toolrow .tool > img.sample { max-width: 88%; height: auto; }
 .toolrow .tool[hidden] { display: none !important; }
 .tool img.sample, .tool canvas.sample.stamp { width: 36px; height: 36px; display: block; object-fit: contain; }
 .tool img.sample.round { border-radius: 50%; }
+.sticker-badge { position: relative; display: block; width: min(40px, 92%); aspect-ratio: 1; }
+.sticker-badge svg { position: absolute; inset: 0; width: 100%; height: 100%; stroke: #b9b4a8; stroke-width: 1.3; }
+.sticker-badge .sheet { fill: #fff; }
+.sticker-badge .peel { fill: #e6e2d8; }
+.sticker-badge img.sample, .sticker-badge canvas.sample.stamp { position: absolute; left: 14%; top: 14%; width: 62%; height: 62%; max-width: none; }
+.tool canvas.sample.brick { display: block; max-width: 90%; }
+.toolrow .tool canvas.sample.brick { height: auto !important; }
+.pop.bricks { max-width: min(calc(100% - 16px), 400px); max-height: calc(100% - 20px); overflow-y: auto; gap: 6px 4px; align-items: end; }
+.pop.bricks .tool { width: auto; height: 46px; padding: 0 7px; border-radius: 12px; }
+.guides .grid { opacity: .55; }
+.guides pattern circle { fill: #8fb0e6; }
 .tool.more { position: relative; }
 .tool.more::after { content: ''; position: absolute; right: 5px; bottom: 5px; border: 4px solid transparent; border-right-color: var(--muted); border-bottom-color: var(--muted); }
 .tool canvas.sample.bg { width: 26px; height: 33px; border-radius: 5px; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .18); }

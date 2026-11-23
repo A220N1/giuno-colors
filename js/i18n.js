@@ -76,6 +76,8 @@ const EN = {
   'Carreaux': 'Squared paper',
   'Points': 'Dotted paper',
   'Tampons': 'Stickers',
+  'Briques': 'Bricks',
+  'Brique {name}': 'Brick {name}',
   'Voir toute la page': 'Show the whole page',
   'Coin des parents': "Grown-ups' corner",
   'Sauvegarde dans un fichier les profils, la progression, les dessins et ce qui a été ajouté ici, pour les retrouver sur un autre téléphone.':

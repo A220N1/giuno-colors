@@ -213,6 +213,11 @@ export function sparkler(canvas) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
 
-  return { resize, emit, burst, bubble, firework, rain, clear, count: () => stars.length, floating: () => bubbles.length,
+  // Any other animation: draw(age from 0 to 1, context in screen pixels) at each frame, then done().
+  function effect(dur, draw, done) {
+    play({ dur, done, draw(age) { ctx.save(); draw(age, ctx); ctx.restore(); } });
+  }
+
+  return { resize, emit, burst, bubble, firework, rain, effect, clear, count: () => stars.length, floating: () => bubbles.length,
     busy: () => effects.length > 0 };
 }

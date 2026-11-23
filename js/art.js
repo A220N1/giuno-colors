@@ -13,6 +13,7 @@
 //   { t: 'bg', k, c? }                              page background (see backgrounds.js), the last one counts
 //   { t: 'smudge', w, p: [...] }                    finger: spreads the paint of both layers along it
 //   { t: 'flakes', k: 'snow' | 'glitter', c, s, n }  n flakes over the page from a shake, placed from seed s
+//   { t: 'brick', k, c, x, y }                      building brick on the stud grid (see bricks.js)
 // A line may carry k, its kind of brush (see brushes.js); without it, the felt pen.
 // The colour c is '#rrggbb' or 'rainbow': pastel hues turning along a stroke, or across a fill or shape.
 // Lines, eraser strokes and shapes may carry m (2, 4 or 6): drawn again as their mirror images around
@@ -22,6 +23,7 @@ import { RAINBOW, rainbowAt, HEART, linePath, drawStroke, wallWidth, along, drip
 import { stampImage, isAnimal, isNature } from './images.js';
 import { drawNature, drawFlakes } from './nature.js';
 import { backgroundOf, paintBackground } from './backgrounds.js';
+import { drawBrick } from './bricks.js';
 
 export const PAGE_W = 800, PAGE_H = 1000;
 export const SIZES = [6, 14, 28, 52, 84];
@@ -308,15 +310,16 @@ export function drawOp(fills, lines, op, solid = false) {
     mirrored(op, [lines], () => {
       if (op.t === 'shape') drawShape(lines, op, pathOf(op));
       else if (op.t === 'stamp') drawStamp(lines, op);
+      else if (op.t === 'brick') drawBrick(lines, op);
       else drawLine(lines, op, solid);
     });
   }
 }
 
-// Dripping paint just drawn: the line with its drops `grow` of their length, then the drops alone as
-// they run further down (each step paints over the last).
-export function drawDripping(lines, op, grow, dropsOnly = false) {
-  mirrored(op, [lines], () => { if (dropsOnly) drips(lines, op, grow); else drawStroke(lines, op, 0, grow); });
+// Dripping paint just drawn: the line with its drops as they are at time `t` of their run (0 to 1),
+// or the drops alone.
+export function drawDripping(ctx, op, t, dropsOnly = false) {
+  mirrored(op, [ctx], () => { if (dropsOnly) drips(ctx, op, t); else drawStroke(ctx, op, 0, t); });
 }
 
 // An operation still being drawn, on the layer above both: the eraser shows as white paper.
@@ -327,6 +330,7 @@ export function drawPreview(ctx, op, from = 0) {
     if (op.t === 'erase') stroke(ctx, linePath(op.p), op.paper || '#fff', op.w);
     else if (op.t === 'shape') drawShape(ctx, op, shapePath(op.k, op.b));
     else if (op.t === 'stamp') { ctx.save(); ctx.globalAlpha = 0.85; drawStamp(ctx, op); ctx.restore(); }
+    else if (op.t === 'brick') { ctx.save(); ctx.globalAlpha = 0.8; drawBrick(ctx, op); ctx.restore(); }
     else next = drawStroke(ctx, op, from);
   });
   return next;
