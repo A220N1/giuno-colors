@@ -98,6 +98,15 @@ $('#install').addEventListener('click', async () => {
 });
 addEventListener('appinstalled', () => { $('#install').hidden = true; });
 
+// Started inside a drawing, by a reload or by the phone bringing the app back after closing it: there
+// is nothing under it to go back to, and Back would leave the app on an empty screen. The gallery is
+// put under it. A padlock entry left by a reload is being dropped by lock.js: leave that one alone.
+if (location.hash && !pushed() && !(history.state && history.state.lock)) {
+  const hash = location.hash;
+  clearHash();
+  history.pushState({ pushed: true }, '', hash);
+}
+
 translatePage();
 // the colouring pages imported on this phone join the gallery before it shows
 try { await loadImported(); } catch (e) { console.error('imported pages not loaded:', e); }

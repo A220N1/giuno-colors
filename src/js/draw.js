@@ -8,6 +8,7 @@ import { sharePng, canvasPng } from './share.js';
 import { sparkler } from './sparkles.js';
 import { STAMPS, stampUrl, stampGroups, isAnimal, isNature, isCustom, customSticker, prepareArt, preloadStamps } from './images.js';
 import { isFirework, flakesOf } from './nature.js';
+import { BRICKS, PIECES, STUD, PLATE, BASE, drawPiece, snapBrick } from './bricks.js';
 import { t } from './i18n.js';
 import { perfScene, perfStart, perfStop, count } from './perf.js';
 
@@ -20,7 +21,7 @@ const SHAPE_NAMES = { circle: 'Rond', square: 'Carré', triangle: 'Triangle', st
 const SPARKLE_EVERY_PX = 9;  // finger travel between two stars of a rainbow stroke
 const STAR_HUE = 0.13;      // the gold of the stars a shooting-star stroke throws in a plain colour
 const BUBBLE_EVERY_PX = 34; // finger travel between two bubbles flying off a bubble stroke
-const DRIP_MS = 1300;       // how long dripping paint keeps running after the stroke
+const DRIP_MS = 3800;       // how long dripping paint keeps running after the stroke
 const SHAKE_ACCEL = 14;     // m/s² on top of gravity: a real shake, not a phone picked up
 const SHAKE_GAP_MS = 1500;  // one snowfall per shake
 const FLAKES = 70;          // flakes a shake lets fall
@@ -28,6 +29,7 @@ const MIRROR_NAMES = { 1: 'Sans miroir', 2: 'Miroir gauche-droite', 4: 'Miroir e
 const BAR_PX = [1.5, 2.5, 4, 5.5, 7.5];  // the sizes as bars on the thickness button
 const STAMP_SIZES = [80, 130, 190, 260, 340];  // side of a sticker dropped by a tap, by size
 const STAMP_MIN = 30;  // a drag smaller than this drops a sticker of the chosen size instead
+const LIFT_PX = 26;    // a sticker being sized, or a brick being placed, shows this far above the finger
 const MAX_ZOOM = 4;
 
 const stage = $('#draw-stage');
@@ -43,7 +45,8 @@ const baseLayer = baseCanvas.getContext('2d');
 const live = liveCanvas.getContext('2d');
 const pop = $('#draw-pop');
 const sparkles = sparkler($('#sparkles'));
-const tool = { kind: 'brush', brush: 'marker', color: COLORS[0], size: 1, shape: 'circle', stamp: STAMPS[0], mirror: 1 };  // kept from one drawing to the next
+const DEFAULT_STAMP = 'e2B50';
+const tool = { kind: 'brush', brush: 'marker', color: COLORS[0], size: 1, shape: 'circle', stamp: DEFAULT_STAMP, brick: 'b2', mirror: 1 };  // kept from one drawing to the next
 let A = null;  // the drawing on screen
 let pen = null;
 let onBack = () => {};
@@ -252,11 +255,24 @@ function boxOf(x0, y0, x1, y1) {
 
 const stampOp = (b) => (isNature(tool.stamp) ? { t: 'stamp', k: tool.stamp, b, c: tool.color } : { t: 'stamp', k: tool.stamp, b });
 
-// A sticker stays square: the drag sets its side from the corner where it started.
-function stampBox(x0, y0, x1, y1) {
+// A finger hides what is under it, and the hand what is below: under a finger, things show a little
+// above it, whichever hand it is. A mouse hides nothing.
+const liftOf = (e) => (e.pointerType === 'touch' ? LIFT_PX / scale() : 0);
+
+// A sticker stays square: its side is how far the finger went from where it started. Under a finger
+// it sits just above it; with a mouse it grows from the corner where the drag started.
+function stampBox(x0, y0, x1, y1, lift) {
   const side = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
   if (side < STAMP_MIN) return null;
+  if (lift) return boxOf(x1 - side / 2, y1 - lift - side, x1 + side / 2, y1 - lift);
   return boxOf(x0, y0, x1 < x0 ? x0 - side : x0 + side, y1 < y0 ? y0 - side : y0 + side);
+}
+
+// The brick in use where the pointer wants it: resting just above a finger, or under a mouse.
+function brickOp(e) {
+  const [x, y] = toPage(e), lift = liftOf(e);
+  const under = lift ? y - lift : y + PIECES[tool.brick].h * PLATE / 2;
+  return mirrorable({ t: 'brick', k: tool.brick, c: tool.color, ...snapBrick(A.ops, tool.brick, x, under) });
 }
 
 // Replay: the drawing draws itself again in a few seconds, stroke by stroke.
@@ -332,21 +348,26 @@ function floatBubble(op, x, y, len) {
   }
 }
 
-// Dripping paint runs down for a moment after the stroke, each frame painting longer drops.
+// Dripping paint runs down for a few seconds after the stroke. The drops are shown over the page
+// while they run, since they change shape as they go, then painted on the drawing once they stopped.
 const dripping = new Set();
 function runDrips(op) {
-  const a = A, t0 = performance.now(), run = { raf: 0 };
-  const step = (now) => {
-    if (A !== a || !dripping.has(run)) return;
-    const t = Math.min(1, (now - t0) / DRIP_MS);
-    drawDripping(lines, op, 1 - (1 - t) ** 2, true);
-    if (t < 1) run.raf = requestAnimationFrame(step); else dripping.delete(run);
-  };
+  const a = A, run = {};
   dripping.add(run);
-  run.raf = requestAnimationFrame(step);
+  sparkles.effect(DRIP_MS, (t, ctx) => {
+    if (A !== a || !dripping.has(run)) return;
+    ctx.translate(a.view.ox, a.view.oy);
+    ctx.scale(scale(), scale());
+    ctx.beginPath();
+    ctx.rect(0, 0, PAGE_W, PAGE_H);
+    ctx.clip();
+    drawDripping(ctx, op, t, true);
+  }, () => {
+    if (A === a && dripping.delete(run)) drawDripping(lines, op, 1, true);
+  });
 }
+// Called before the page is drawn again whole: the drops are then painted at full length.
 function stopDrips() {
-  for (const run of dripping) cancelAnimationFrame(run.raf);
   dripping.clear();
 }
 
@@ -434,6 +455,7 @@ stage.addEventListener('pointerdown', (e) => {
   }
   else if (tool.kind === 'eraser') pen.op = mirrorable({ t: 'erase', w, p: start });
   else if (tool.kind === 'smudge') pen.op = mirrorable({ t: 'smudge', w, p: start });
+  else if (tool.kind === 'brick') pen.op = brickOp(e);
   if (throwsStars(pen.op)) sparkleAt(x, y, starHue(pen.op, 0), 3);
   if (pen.op && pen.op.k === 'bubbles') floatBubble(pen.op, x, y, 0);
   pen.from = 0;
@@ -463,8 +485,10 @@ stage.addEventListener('pointermove', (e) => {
     const [x, y] = toPage(e);
     pen.op = mirrorable({ t: 'shape', k: tool.shape, c: tool.color, w: SIZES[tool.size], b: boxOf(pen.x, pen.y, x, y) });
   } else if (tool.kind === 'stamp' && pen.moved) {
-    const b = stampBox(pen.x, pen.y, ...toPage(e));
+    const b = stampBox(pen.x, pen.y, ...toPage(e), liftOf(e));
     pen.op = b ? mirrorable(stampOp(b)) : null;
+  } else if (tool.kind === 'brick') {
+    pen.op = brickOp(e);
   }
   showLive();
 });
@@ -488,11 +512,14 @@ function penUp(e) {
     return;
   } else if (tool.kind === 'stamp') {
     const h = STAMP_SIZES[tool.size] / 2;
-    const b = (g.moved && stampBox(g.x, g.y, x, y)) || boxOf(g.x - h, g.y - h, g.x + h, g.y + h);
+    const b = (g.moved && stampBox(g.x, g.y, x, y, liftOf(e))) || boxOf(g.x - h, g.y - h, g.x + h, g.y + h);
     const op = mirrorable(stampOp(b));
     commit(op);
     vibrate(12);
     if (isFirework(op.k)) fireworkBurst(op);
+  } else if (tool.kind === 'brick') {
+    commit(brickOp(e));
+    vibrate(8);
   } else if (tool.kind === 'shape') {
     const h = SHAPE_TAP_SIZE / 2;
     const b = g.moved ? boxOf(g.x, g.y, x, y) : boxOf(g.x - h, g.y - h, g.x + h, g.y + h);
@@ -568,6 +595,31 @@ function stampIcon(k) {
   return img;
 }
 
+// The sticker in use on a little sticker with a corner peeling off: the button of the sticker tool.
+function stickerBadge(k) {
+  const badge = el('span', 'sticker-badge');
+  badge.innerHTML = '<svg viewBox="0 0 40 40"><path class="sheet" d="M9 3h22a6 6 0 0 1 6 6v15L24 37H9a6 6 0 0 1-6-6V9a6 6 0 0 1 6-6z"/>'
+    + '<path class="peel" d="M37 24h-7a6 6 0 0 0-6 6v7z"/></svg>';
+  badge.append(stampIcon(k));
+  return badge;
+}
+
+// A brick piece in the colour in use, `unit` pixels to a stud.
+function brickIcon(k, unit) {
+  const piece = PIECES[k], dpr = window.devicePixelRatio || 1, s = unit / STUD;
+  const w = piece.w * unit + 4, h = (piece.h * PLATE + 8) * s + 4;
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * dpr);
+  c.height = Math.round(h * dpr);
+  c.style.width = w + 'px';
+  c.style.height = h + 'px';
+  c.className = 'sample brick';
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr * s, 0, 0, dpr * s, 2 * dpr, (h - 2) * dpr);
+  drawPiece(ctx, { k, c: tool.color, x: 3, y: 9 });
+  return c;
+}
+
 // A wave drawn with a kind of brush in the colour in use, as its button.
 function brushSample(kind, px = 40) {
   const c = document.createElement('canvas');
@@ -632,7 +684,10 @@ function updateGuides() {
     return `<line x1="${(PAGE_W / 2 - dx).toFixed(0)}" y1="${(PAGE_H / 2 - dy).toFixed(0)}" x2="${(PAGE_W / 2 + dx).toFixed(0)}" y2="${(PAGE_H / 2 + dy).toFixed(0)}"/>`;
   };
   const axes = { 1: [], 2: [90], 4: [90, 0], 6: [90, 30, 150] }[tool.mirror] || [];
-  g.innerHTML = axes.map(line).join('');
+  // with the bricks, a dot at every corner of the grid they snap to
+  const grid = tool.kind === 'brick' ? `<defs><pattern id="brick-grid" x="${-STUD / 2}" y="${BASE % (3 * PLATE) - 1.5 * PLATE}" width="${STUD}" height="${3 * PLATE}" patternUnits="userSpaceOnUse">`
+    + `<circle cx="${STUD / 2}" cy="${1.5 * PLATE}" r="2.4"/></pattern></defs><rect class="grid" width="${PAGE_W}" height="${PAGE_H}" fill="url(#brick-grid)"/>` : '';
+  g.innerHTML = grid + axes.map(line).join('');
 }
 
 // Paints an element in the colour in use; a pale colour gets an outline so it shows on white.
@@ -665,7 +720,7 @@ function sizeLine(i) {
 
 // A personal sticker may have been removed since it was picked.
 function checkStamp() {
-  if (isCustom(tool.stamp) && !customSticker(tool.stamp)) tool.stamp = STAMPS[0];
+  if (isCustom(tool.stamp) && !customSticker(tool.stamp)) tool.stamp = DEFAULT_STAMP;
 }
 
 function updateTools() {
@@ -680,7 +735,10 @@ function updateTools() {
   $('#size').replaceChildren(sizeBars());
   $('#size').setAttribute('aria-label', t('Épaisseur'));
   const stampBtn = $('#draw .tool[data-tool="stamp"]');
-  stampBtn.replaceChildren(stampIcon(tool.stamp));
+  stampBtn.replaceChildren(stickerBadge(tool.stamp));
+  const brickBtn = $('#draw .tool[data-tool="brick"]');
+  const unit = Math.min(15, 30 / PIECES[tool.brick].w);
+  brickBtn.replaceChildren(brickIcon(tool.brick, unit));
   const mirrorBtn = $('#mirror');
   mirrorBtn.innerHTML = mirrorIcon(tool.mirror);
   mirrorBtn.classList.toggle('on', tool.mirror > 1);
@@ -693,7 +751,7 @@ function updateTools() {
 function openPop(kind, tab = '') {
   if (!pop.hidden && pop.dataset.kind === kind && !tab) { closePop(); return; }
   pop.dataset.kind = kind;
-  pop.classList.remove('grid', 'sizes', 'backgrounds');
+  pop.classList.remove('grid', 'sizes', 'backgrounds', 'bricks');
   pop.replaceChildren();
   if (kind === 'stamp') {
     pop.classList.add('grid');
@@ -720,6 +778,16 @@ function openPop(kind, tab = '') {
       tabs.append(b);
     }
     pop.append(tabs);
+  } else if (kind === 'brick') {
+    pop.classList.add('bricks');
+    for (const k of BRICKS) {
+      const b = el('button', 'tool' + (k === tool.brick ? ' sel' : ''));
+      b.append(brickIcon(k, 15));
+      b.dataset.brick = k;
+      b.setAttribute('aria-label', t('Brique {name}', { name: k }));
+      b.addEventListener('click', () => { tool.brick = k; tool.kind = 'brick'; closePop(); updateTools(); });
+      pop.append(b);
+    }
   } else if (kind === 'bg') {
     pop.classList.add('backgrounds');
     const current = backgroundOf(A ? A.ops : []);
@@ -782,7 +850,7 @@ for (const b of document.querySelectorAll('#draw .tool[data-tool]')) {
     const again = tool.kind === b.dataset.tool;
     tool.kind = b.dataset.tool;
     // the brush draws at once; its menu opens on a second tap, so a first stroke is never lost
-    if (tool.kind === 'shape' || tool.kind === 'stamp' || (tool.kind === 'brush' && again)) openPop(tool.kind); else closePop();
+    if (tool.kind === 'shape' || tool.kind === 'stamp' || tool.kind === 'brick' || (tool.kind === 'brush' && again)) openPop(tool.kind); else closePop();
     updateTools();
   });
 }

@@ -13,8 +13,15 @@ run(async () => {
   const art = await import('../js/art.js');
   const store = await import('../js/artstore.js');
   const { canvasPng } = await import('../js/share.js');
+  // the app starts inside a colouring page, as when the phone brings it back after closing it:
+  // Back must lead to the gallery, not out of the app
+  history.replaceState(null, '', '#01_poisson');
   await import('../js/main.js');
   await frames();
+  check(!$('#play').hidden && history.state && history.state.pushed, 'started inside a colouring page, with the gallery under it');
+  history.back();
+  await waitFor(() => !$('#gallery').hidden, 'gallery after Back from a page the app started in');
+  check(location.hash === '', 'Back from there shows the gallery');
 
   const stage = $('#draw-stage');
   const flat = () => art.renderFlat(draw.debug.state().ops, art.PAGE_W);  // one pixel per page unit
@@ -245,11 +252,11 @@ run(async () => {
     check(op.t === 'line' && (op.k || 'marker') === k && inked > 40, `${k} draws (${inked} inked pixels)`);
     if (k === 'bubbles') check(draw.debug.sparkles.floating() >= 2, `bubbles fly off the stroke (${draw.debug.sparkles.floating()})`);
   });
-  pickBrush('pencil');
+  pickBrush('pastel');
   drag(stage, ring(600, 600, 120));
   bucket(RED, 600, 600);
   img = flat();
-  check(pixel(img, 600, 600) === RED && pixel(img, 600, 780) !== RED && pixel(img, 420, 600) !== RED, 'a closed pencil line holds the bucket');
+  check(pixel(img, 600, 600) === RED && pixel(img, 600, 780) !== RED && pixel(img, 420, 600) !== RED, 'a closed pastel line holds the bucket');
 
   // stickers: a tap drops one of the chosen size, a drag sizes it
   const pop = $('#draw-pop');
@@ -309,7 +316,7 @@ run(async () => {
   check(pixel(img, 180, 900) === beforeMine[0], 'a removed sticker vanishes from the drawing');
   $('#undo').click();
   pickTool('stamp');
-  check(pop.querySelectorAll('[data-tab]').length === 3 && draw.debug.tool.stamp === 'vcloud1', 'its page goes with it, and another sticker is in use');
+  check(pop.querySelectorAll('[data-tab]').length === 3 && draw.debug.tool.stamp === 'e2B50', 'its page goes with it, and another sticker is in use');
   pickTool('stamp');
 
   pickStamp('e2764', 'draw');
@@ -319,7 +326,37 @@ run(async () => {
   await waitFor(() => pixel(flat(), 400, 860) !== WHITE, 'heart sticker drawn');
   pickStamp('fox', 'animals');
   drag(stage, segment(80, 720, 230, 840, 10));
-  check(K.ops[K.ops.length - 1].b[2] === 150, 'a drag sizes the sticker');
+  const sized = K.ops[K.ops.length - 1].b;
+  check(sized[2] === 150, 'a drag sizes the sticker');
+  check(sized[1] + sized[3] < 840 && Math.abs(sized[0] + 75 - 230) <= 1, 'under a finger the sticker sits above it, not under it');
+  check($('#draw .tool[data-tool="stamp"] .sticker-badge'), 'the sticker button shows a peeling sticker');
+
+  // bricks: 18 pieces, snapped to the stud grid, a second one resting on the first
+  const bricks = await import('../js/bricks.js');
+  pickTool('brick');
+  check(pop.querySelectorAll('[data-brick]').length === 18 && bricks.BRICKS.length === 18, '18 brick pieces');
+  check($('.guides .grid') !== null, 'the stud grid shows with the bricks');
+  pop.querySelector('[data-brick="b2"]').click();
+  pickColor(GREEN);
+  tap(stage, ...at(410, 955));
+  const b1 = K.ops[K.ops.length - 1];
+  const brickPixel = (b) => pixel(flat(), b.x * bricks.STUD + bricks.STUD, bricks.BASE - b.y * bricks.PLATE - 24);
+  check(b1.t === 'brick' && b1.k === 'b2' && Number.isInteger(b1.x) && b1.y % 3 === 0 && Math.abs(b1.x * 40 + 40 - 410) <= 20,
+    `a tap lays a brick on the grid (${b1.x}, ${b1.y})`);
+  check(brickPixel(b1) === GREEN, 'the brick is drawn in the colour in use');
+  pickColor(RED);
+  tap(stage, ...at(410, 955 - 50));
+  const b2 = K.ops[K.ops.length - 1];
+  check(b2.t === 'brick' && b2.x === b1.x && b2.y === b1.y + 3 && brickPixel(b2) === RED, 'a second brick rests on the first');
+  pickTool('brick');
+  pop.querySelector('[data-brick="p2"]').click();
+  tap(stage, ...at(410, 955 - 96 - 4));
+  const b3 = K.ops[K.ops.length - 1];
+  check(b3.k === 'p2' && b3.y === b2.y + 3, `a plate rests on the bricks (${b3.y})`);
+  tap(stage, ...at(410, 955 - 96 - 22));
+  check(K.ops[K.ops.length - 1].y === b3.y + 1, 'a plate rests on a plate');
+  for (let i = 0; i < 4; i++) $('#undo').click();
+  check($('.guides .grid') !== null && K.ops[K.ops.length - 1].t !== 'brick', 'the bricks are undone');
   pickColor(RED);
   pickStamp('vcloud1', 'draw');
   tap(stage, ...at(600, 160));
