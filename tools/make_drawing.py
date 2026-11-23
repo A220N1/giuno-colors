@@ -598,7 +598,8 @@ def make(spec, sources):
     head = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{" ".join(fmt(v) for v in vb)}"\n'
             f'     data-title="{escape(spec["title"], {chr(34): "&quot;"})}" data-level="{level}"\n'
             f'     data-palette="{" ".join(palette)}"\n'
-            f'     data-credit="{CREDIT}">\n')
+            + ('     data-mystery="1"\n' if spec.get("mystery") else "")
+            + f'     data-credit="{CREDIT}">\n')
     merges = sorted((c, rep) for c, rep in mapping.items() if c != rep)
     return head + "\n".join(out) + "\n</svg>\n", zones, len(palette), level, merges
 

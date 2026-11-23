@@ -15,6 +15,7 @@ function parseDrawing(entry) {
       key: entry.id + '.' + entry.hash,  // a changed drawing starts over instead of mixing up zones
       title: root.getAttribute('data-title') || entry.id,
       level: parseInt(root.getAttribute('data-level'), 10) || 1,
+      mystery: root.hasAttribute('data-mystery'),  // nothing of it shows until it is coloured
       vb: root.getAttribute('viewBox').trim().split(/[\s,]+/).map(Number),
       palette: root.getAttribute('data-palette').trim().split(/[\s,]+/),
       root,
@@ -57,10 +58,35 @@ export function instantiate(d) {
   return { g, zones, colors };
 }
 
-export function paint(zone, color) {
+// `fill`: what the zone is filled with when it is not the plain colour (a gradient or a pattern).
+export function paint(zone, color, fill = color) {
   zone.classList.remove('hl');
   zone.classList.add('done');
-  zone.style.setProperty('--c', color);
+  zone.style.setProperty('--c', fill);
+  zone.style.setProperty('--s', color);
+}
+
+// Lighter (k > 0) or darker (k < 0) shade of a '#rrggbb' colour.
+export function shade(hex, k) {
+  const n = parseInt(hex.slice(1), 16);
+  const m = (v) => Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)).toString(16).padStart(2, '0');
+  return '#' + m(n >> 16) + m((n >> 8) & 255) + m(n & 255);
+}
+
+// Fill styles for coloured zones, as SVG markup: a gradient from light to dark across each zone, and
+// a tile of the colour strewn with glitter, `size` units wide.
+export const shadeMarkup = (id, color) => `<linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">`
+  + `<stop offset="0" stop-color="${shade(color, 0.45)}"/><stop offset=".5" stop-color="${color}"/><stop offset="1" stop-color="${shade(color, -0.28)}"/></linearGradient>`;
+// [x, y, size, kind] in a tile of 40: stars (0 white, 1 pale gold), dots (2 lighter, 3 darker than the colour)
+const SPARKS = [[5, 6, 3.4, 0], [19, 3, 1.8, 1], [31, 9, 2.6, 0], [12, 15, 1.4, 2], [25, 17, 3, 1], [37, 22, 1.6, 0], [4, 24, 2.2, 3],
+  [16, 28, 2.8, 0], [29, 30, 1.5, 2], [9, 36, 1.9, 1], [22, 37, 1.3, 3], [35, 35, 2.4, 0], [38, 3, 1.2, 3], [1, 14, 1.2, 2]];
+export function glitterMarkup(id, color, size) {
+  const marks = SPARKS.map(([x, y, r, kind]) => {
+    if (kind > 1) return `<circle cx="${x}" cy="${y}" r="${r}" fill="${shade(color, kind === 2 ? 0.4 : -0.22)}"/>`;
+    return `<path fill="${kind ? '#fff1a8' : '#ffffff'}" d="M${x} ${y - r}Q${x} ${y} ${x + r} ${y}Q${x} ${y} ${x} ${y + r}Q${x} ${y} ${x - r} ${y}Q${x} ${y} ${x} ${y - r}Z"/>`;
+  }).join('');
+  return `<pattern id="${id}" patternUnits="userSpaceOnUse" width="${size}" height="${size}" viewBox="0 0 40 40">`
+    + `<rect width="40" height="40" fill="${color}"/>${marks}</pattern>`;
 }
 
 // Geometry of a shape element as path data, for canvas rendering.

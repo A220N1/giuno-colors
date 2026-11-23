@@ -60,18 +60,20 @@ export function showGallery(profile, onOpen, onWho, onArt) {
     const { g, zones, colors } = instantiate(d);
     const filled = new Set(getProgress(profile.id, d.key).filter((i) => i < zones.length));
     zones.forEach((z, i) => { if (filled.has(i)) paint(z, d.palette[colors[i]]); });
-    const thumb = svgEl('svg', { viewBox: d.vb.join(' '), class: 'thumb' });
+    // a mystery page keeps its picture and its name to itself until it is finished
+    const hidden = d.mystery && filled.size < zones.length;
+    const thumb = svgEl('svg', { viewBox: d.vb.join(' '), class: hidden ? 'thumb mystery' : 'thumb' });
     thumb.style.aspectRatio = `${d.vb[2]} / ${d.vb[3]}`;
     thumb.append(g);
 
     const meta = el('div', 'meta');
-    meta.append(el('b', null, titleOf(d)), el('span', null, `${LEVELS[d.level] ? t(LEVELS[d.level]) : ''} · ${zones.length}`));
+    meta.append(el('b', null, hidden ? t('Coloriage mystère') : titleOf(d)), el('span', null, `${LEVELS[d.level] ? t(LEVELS[d.level]) : ''} · ${zones.length}`));
     const bar = el('div', 'bar' + (filled.size === zones.length ? ' full' : ''));
     const fill = el('i');
     fill.style.width = (100 * filled.size / zones.length) + '%';
     bar.append(fill);
 
-    const card = el('button', 'card');
+    const card = el('button', hidden ? 'card secret' : 'card');
     card.append(thumb, meta, bar);
     card.addEventListener('click', () => onOpen(d));
     if (d.imported) {

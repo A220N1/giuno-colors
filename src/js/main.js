@@ -13,6 +13,7 @@ import { loadStickers } from './stickers.js';
 import { preloadStamps } from './images.js';
 import { newArtId } from './artstore.js';
 import { lang, setLanguage, translatePage } from './i18n.js';
+import { soundOn, setSoundOn, sfx } from './sound.js';
 
 // Screens map to the address: '' gallery, '#profils' profile choice, '#<drawing id>' colouring,
 // '#libre/<id>' free drawing. A screen opened from the gallery gets its own history entry, marked so
@@ -76,6 +77,16 @@ for (const b of document.querySelectorAll('.lang-switch')) {
     route();  // the screen shown is drawn again in the new language
   });
 }
+
+const showSound = () => { for (const b of document.querySelectorAll('.sound-switch')) b.classList.toggle('off', !soundOn()); };
+for (const b of document.querySelectorAll('.sound-switch')) {
+  b.addEventListener('click', () => {
+    setSoundOn(!soundOn());
+    showSound();
+    sfx('pop');
+  });
+}
+showSound();
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   addEventListener('load', () => {

@@ -1,24 +1,33 @@
 // A drawing as a PNG image, shared through the phone's share sheet or saved as a download.
 import { titleOf } from './i18n.js';
+import { shadeMarkup, glitterMarkup } from './drawings.js';
 
 // Standalone SVG of the drawing as coloured so far: filled zones in their colour, the others white.
-export function snapshotSvg(d, filled, width) {
+// `style`: 'shade' or 'glitter' fills the coloured zones as on the colouring screen.
+export function snapshotSvg(d, filled, width, style = 'flat') {
   const root = d.root.cloneNode(true);
   const [, , vw, vh] = d.vb;
   const stroke = 3 * Math.max(vw, vh) / 1000;
+  if (style !== 'flat') {
+    const markup = d.palette.map((c, i) => (style === 'shade' ? shadeMarkup('fx' + i, c) : glitterMarkup('fx' + i, c, Math.max(vw, vh) / 14))).join('');
+    const defs = new DOMParser().parseFromString(`<defs xmlns="http://www.w3.org/2000/svg">${markup}</defs>`, 'image/svg+xml').documentElement;
+    root.prepend(root.ownerDocument.importNode(defs, true));
+  }
   [...root.querySelectorAll('[data-c]')].forEach((z, i) => {
-    const color = filled.has(i) ? d.palette[parseInt(z.getAttribute('data-c'), 10) - 1] : '#ffffff';
+    const ci = parseInt(z.getAttribute('data-c'), 10) - 1;
+    const color = filled.has(i) ? d.palette[ci] : '#ffffff';
     const line = filled.has(i) ? color : '#6b6b6b';
-    z.setAttribute('style', `fill:${color};stroke:${line};stroke-width:${stroke};stroke-linejoin:round`);
+    const fill = filled.has(i) && style !== 'flat' ? `url(#fx${ci})` : color;
+    z.setAttribute('style', `fill:${fill};stroke:${line};stroke-width:${stroke};stroke-linejoin:round`);
   });
   root.setAttribute('width', width);
   root.setAttribute('height', Math.round(width * vh / vw));
   return new XMLSerializer().serializeToString(root);
 }
 
-export async function renderPng(d, filled, width) {
+export async function renderPng(d, filled, width, style) {
   const height = Math.round(width * d.vb[3] / d.vb[2]);
-  const url = URL.createObjectURL(new Blob([snapshotSvg(d, filled, width)], { type: 'image/svg+xml' }));
+  const url = URL.createObjectURL(new Blob([snapshotSvg(d, filled, width, style)], { type: 'image/svg+xml' }));
   try {
     const img = new Image();
     img.src = url;
@@ -40,8 +49,8 @@ export function canvasPng(canvas) {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG encoding failed'))), 'image/png'));
 }
 
-export async function shareDrawing(d, filled) {
-  return sharePng(await renderPng(d, filled, 1200), `giuno-${d.id}.png`, titleOf(d));
+export async function shareDrawing(d, filled, style) {
+  return sharePng(await renderPng(d, filled, 1200, style), `giuno-${d.id}.png`, titleOf(d));
 }
 
 export async function sharePng(blob, name, title) {

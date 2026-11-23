@@ -2,13 +2,15 @@
 import { $, el, showScreen, vibrate, inkFor, confirmDialog } from './util.js';
 import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, MIRRORS, BRUSHES, BRUSH_NAMES, PIECEWISE, BACKGROUNDS, BG_NAMES, BG_CLOSE_UP,
   backgroundOf, sameBackground, paperColor, drawBackground, drawBase, mirrorPoints, smudgeOp, drawOp, drawPreview, drawDripping, renderLayers, renderFlat,
-  clearCanvas, fillRegion } from './art.js';
+  clearCanvas, clearLayers, fillRegion, STENCILS, STENCIL_BOX } from './art.js';
 import { getArt, putArt, deleteArt } from './artstore.js';
 import { sharePng, canvasPng } from './share.js';
 import { sparkler } from './sparkles.js';
 import { STAMPS, stampUrl, stampGroups, isAnimal, isNature, isCustom, customSticker, prepareArt, preloadStamps } from './images.js';
 import { isFirework, flakesOf } from './nature.js';
-import { BRICKS, PIECES, STUD, PLATE, BASE, drawPiece, snapBrick } from './bricks.js';
+import { BRICKS, TOP_BRICKS, PIECES, STUD, PLATE, BASE, MODELS, drawPiece, drawModel, snapBrick, brickBox, brickAt, liveBricks, removedOps,
+  modelOf, modelLeft } from './bricks.js';
+import { sfx, rubStart, rubMove, rubStop } from './sound.js';
 import { t } from './i18n.js';
 import { perfScene, perfStart, perfStop, count } from './perf.js';
 
@@ -30,6 +32,7 @@ const BAR_PX = [1.5, 2.5, 4, 5.5, 7.5];  // the sizes as bars on the thickness b
 const STAMP_SIZES = [80, 130, 190, 260, 340];  // side of a sticker dropped by a tap, by size
 const STAMP_MIN = 30;  // a drag smaller than this drops a sticker of the chosen size instead
 const LIFT_PX = 26;    // a sticker being sized, or a brick being placed, shows this far above the finger
+const PICK_MS = 380;   // holding a brick this long picks it up, to move it or throw it off the page
 const MAX_ZOOM = 4;
 
 const stage = $('#draw-stage');
@@ -46,7 +49,8 @@ const live = liveCanvas.getContext('2d');
 const pop = $('#draw-pop');
 const sparkles = sparkler($('#sparkles'));
 const DEFAULT_STAMP = 'e2B50';
-const tool = { kind: 'brush', brush: 'marker', color: COLORS[0], size: 1, shape: 'circle', stamp: DEFAULT_STAMP, brick: 'b2', mirror: 1 };  // kept from one drawing to the next
+const tool = { kind: 'brush', brush: 'marker', color: COLORS[0], size: 1, shape: 'circle', stamp: DEFAULT_STAMP, brick: 'b2', brickTab: 'side',
+  stencil: '', mirror: 1 };  // kept from one drawing to the next
 let A = null;  // the drawing on screen
 let pen = null;
 let onBack = () => {};
@@ -72,6 +76,7 @@ export async function openDraw(id, profileId, goBack, baseId = '') {
   a.base = await prepareArt(a.ops, a.baseId);
   if (A !== a) return;
   a.loading = false;
+  a.modelDone = modelOf(a.ops) && !modelLeft(a.ops, modelOf(a.ops)).length ? modelOf(a.ops) : '';
   renderAll();
   updateButtons();
 }
@@ -82,6 +87,7 @@ export function leaveDraw() {
   stopReplay();
   A = null;
   pen = null;
+  rubStop();
   closePop();
   sparkles.clear();
 }
@@ -135,6 +141,8 @@ function renderAll() {
   const bg = backgroundOf(A.ops);
   A.paper = paperColor(bg);
   drawBackground(back, bg, A.k);
+  const model = modelOf(A.ops);
+  if (model) drawModel(back, model, modelLeft(A.ops, model));  // what is left to build, pale, under the bricks
   updateBgButton(bg);
   renderLayers(fills, lines, A.ops, A.k);
   drawBase(baseLayer, A.base, A.k);
@@ -144,7 +152,7 @@ function renderAll() {
 
 // One more operation on screen: a background redraws its layer, the rest draws on top.
 function showOp(op) {
-  if (op.t === 'bg') renderAll(); else drawOp(fills, lines, op);
+  if (op.t === 'bg' || op.t === 'unbrick' || op.t === 'model' || op.r != null) renderAll(); else drawOp(fills, lines, op);
 }
 
 function onResize() {
@@ -194,6 +202,7 @@ function undo() {
   A.redo.push(A.ops.pop());
   renderAll();
   changed();
+  sfx('tick');
 }
 
 function redo() {
@@ -203,12 +212,16 @@ function redo() {
   A.ops.push(op);
   showOp(op);
   changed();
+  sfx('tick');
 }
 
 function updateButtons() {
   $('#undo').disabled = !A || !A.ops.length;
   $('#redo').disabled = !A || !A.redo.length;
-  $('#replay').disabled = !A || !A.ops.some((op) => op.t !== 'bg');
+  $('#replay').disabled = !A || !A.ops.some((op) => op.t !== 'bg' && op.t !== 'model');
+  const n = A && tool.kind === 'brick' ? liveBricks(A.ops).length : 0;
+  $('#brick-count').hidden = !n;
+  $('#brick-count').textContent = n;
 }
 
 // Gestures: one finger draws; two fingers zoom and move the page (the stroke they interrupt is
@@ -226,7 +239,7 @@ function pinchState() {
 }
 
 function startPinch() {
-  if (pen) { pen = null; clearLive(); }
+  if (pen) { clearTimeout(pen.hold); pen = null; rubStop(); clearLive(); }
   closePop();
   pinch = { ...pinchState(), v0: { ...A.view }, v: { ...A.view } };
 }
@@ -268,11 +281,26 @@ function stampBox(x0, y0, x1, y1, lift) {
   return boxOf(x0, y0, x1 < x0 ? x0 - side : x0 + side, y1 < y0 ? y0 - side : y0 + side);
 }
 
-// The brick in use where the pointer wants it: resting just above a finger, or under a mouse.
-function brickOp(e) {
+// A brick where the pointer wants it: resting just above a finger, or under a mouse. The brick in
+// use in the colour in use, or a brick picked up from the page.
+function brickOp(e, k = tool.brick, c = tool.color) {
   const [x, y] = toPage(e), lift = liftOf(e);
-  const under = lift ? y - lift : y + PIECES[tool.brick].h * PLATE / 2;
-  return mirrorable({ t: 'brick', k: tool.brick, c: tool.color, ...snapBrick(A.ops, tool.brick, x, under) });
+  const under = lift ? y - lift : y + brickBox({ k, x: 0, y: 0 })[3] / 2;
+  return mirrorable({ t: 'brick', k, c, ...snapBrick(A.ops, k, x, under) });
+}
+
+// A model just finished: every brick of it stands. Celebrated once.
+function checkModel() {
+  const k = modelOf(A.ops), done = k && !modelLeft(A.ops, k).length ? k : '';
+  if (done && A.modelDone !== done) {
+    sfx('bravo');
+    vibrate(60);
+    const colours = ['#ffd23f', '#ff5a5f', '#5db7ff', '#4cd08a', '#ffffff'];
+    for (const [x, y] of [[200, 300], [600, 260], [400, 480]]) {
+      sparkles.firework(A.view.ox + x * scale(), A.view.oy + y * scale(), 150 * scale(), colours);
+    }
+  }
+  A.modelDone = done;
 }
 
 // Replay: the drawing draws itself again in a few seconds, stroke by stroke.
@@ -283,10 +311,12 @@ function replay() {
   stopReplay();
   closePop();
   const a = A, ops = a.ops.slice();
+  const gone = removedOps(ops);
+  const skip = (op) => op.t === 'bg' || gone.has(op);  // bricks taken away since are left out
   const total = ops.reduce((n, op) => n + replayCost(op), 0);
   const duration = Math.min(10000, Math.max(2500, total * 5));
   // the page starts blank on its final background
-  clearCanvas(fills, a.k); clearCanvas(lines, a.k); clearCanvas(live, a.k);
+  clearLayers(fills, lines, ops, a.k); clearCanvas(live, a.k);
   const R = { i: 0, done: 0, from: 0, t0: performance.now(), raf: 0 };
   a.replay = R;
   stage.classList.add('replaying');
@@ -294,7 +324,7 @@ function replay() {
     if (A !== a || a.replay !== R) return;
     const target = total * Math.min(1, (now - R.t0) / duration);
     while (R.i < ops.length && R.done + replayCost(ops[R.i]) <= target) {
-      if (ops[R.i].t !== 'bg') drawOp(fills, lines, ops[R.i]);
+      if (!skip(ops[R.i])) drawOp(fills, lines, ops[R.i]);
       R.done += replayCost(ops[R.i]);
       R.i++;
       R.from = 0;
@@ -302,7 +332,7 @@ function replay() {
     }
     if (R.i >= ops.length) { stopReplay(); return; }
     const op = ops[R.i];
-    if (op.p && op.t !== 'smudge') {
+    if (op.p && op.t !== 'smudge' && !skip(op)) {
       const part = { ...op, p: op.p.slice(0, 2 * Math.max(1, Math.floor(target - R.done))) };
       if (op.t === 'line' && PIECEWISE.has(op.k)) R.from = drawPreview(live, part, R.from);
       else { clearCanvas(live, a.k); drawPreview(live, op.t === 'erase' ? { ...part, paper: a.paper } : part); }
@@ -387,6 +417,7 @@ function shake() {
   const a = A;
   const op = { t: 'flakes', k: tool.color === '#ffffff' ? 'snow' : 'glitter', c: tool.color, s: Math.floor(Math.random() * 1e9), n: FLAKES };
   vibrate(30);
+  sfx('chime');
   sparkles.rain(flakesOf(op), (x, y) => (A === a ? [a.view.ox + x * scale(), a.view.oy + y * scale()] : [-99, -99]),
     () => (A === a ? scale() : 1), () => { if (A === a && !a.loading) commit(op); });
 }
@@ -416,9 +447,10 @@ function askMotion() {
   if (D && typeof D.requestPermission === 'function') D.requestPermission().catch(() => {});
 }
 
-// A new operation takes the mirror mode in use.
+// A new operation takes the mirror mode and the stencil in use.
 function mirrorable(op) {
   if (tool.mirror > 1) op.m = tool.mirror;
+  if (tool.stencil) op.s = tool.stencil;
   return op;
 }
 
@@ -455,7 +487,22 @@ stage.addEventListener('pointerdown', (e) => {
   }
   else if (tool.kind === 'eraser') pen.op = mirrorable({ t: 'erase', w, p: start });
   else if (tool.kind === 'smudge') pen.op = mirrorable({ t: 'smudge', w, p: start });
-  else if (tool.kind === 'brick') pen.op = brickOp(e);
+  else if (tool.kind === 'brick') {
+    pen.op = brickOp(e);
+    const p = pen;
+    // held still on a brick: it is picked up, to be moved or thrown off the page
+    p.hold = setTimeout(() => {
+      if (pen !== p || p.moved || !A) return;
+      const i = brickAt(A.ops, p.x, p.y);
+      if (i < 0) return;
+      p.pick = i;
+      p.op = brickOp(e, A.ops[i].k, A.ops[i].c);
+      vibrate(25);
+      sfx('unclick');
+      showLive();
+    }, PICK_MS);
+  }
+  if (pen.op && pen.op.p) rubStart(pen.op.t === 'erase' ? 'eraser' : 'brush');
   if (throwsStars(pen.op)) sparkleAt(x, y, starHue(pen.op, 0), 3);
   if (pen.op && pen.op.k === 'bubbles') floatBubble(pen.op, x, y, 0);
   pen.from = 0;
@@ -480,6 +527,7 @@ stage.addEventListener('pointermove', (e) => {
       pen.bub += Math.hypot(e.clientX - pen.lx, e.clientY - pen.ly);
       for (; pen.bub >= BUBBLE_EVERY_PX; pen.bub -= BUBBLE_EVERY_PX) floatBubble(pen.op, pen.sx, pen.sy, pen.len);
     }
+    rubMove(Math.hypot(e.clientX - pen.lx, e.clientY - pen.ly));
     pen.lx = e.clientX; pen.ly = e.clientY;
   } else if (tool.kind === 'shape' && pen.moved) {
     const [x, y] = toPage(e);
@@ -488,7 +536,7 @@ stage.addEventListener('pointermove', (e) => {
     const b = stampBox(pen.x, pen.y, ...toPage(e), liftOf(e));
     pen.op = b ? mirrorable(stampOp(b)) : null;
   } else if (tool.kind === 'brick') {
-    pen.op = brickOp(e);
+    pen.op = pen.pick != null ? brickOp(e, A.ops[pen.pick].k, A.ops[pen.pick].c) : brickOp(e);
   }
   showLive();
 });
@@ -499,14 +547,19 @@ function penUp(e) {
   if (!pen || e.pointerId !== pen.id) return;
   const g = pen;
   pen = null;
+  clearTimeout(g.hold);
+  rubStop();
   if (!A) return;
   clearLive();
   const [x, y] = toPage(e);
   if (g.op && g.op.p) {
+    // a tap of the eraser on a brick takes the whole brick away
+    const brick = g.op.t === 'erase' && !g.moved && e.type === 'pointerup' ? brickAt(A.ops, g.x, g.y) : -1;
+    if (brick >= 0) { commit({ t: 'unbrick', i: brick }); sfx('unclick'); vibrate(8); checkModel(); return; }
     const p = g.op.p, qx = Math.round(x), qy = Math.round(y);
     if (g.moved && (qx !== p[p.length - 2] || qy !== p[p.length - 1])) p.push(qx, qy);  // end where the finger left
     if (g.op.t === 'smudge') { smudgeOp(fills, lines, g.op, g.from); commit(g.op, true); }
-    else if (g.op.k === 'drip') { drawDripping(lines, g.op, 0); commit(g.op, true); runDrips(g.op); }
+    else if (g.op.k === 'drip' && !g.op.s) { drawDripping(lines, g.op, 0); commit(g.op, true); runDrips(g.op); }
     else commit(g.op);
   } else if (e.type !== 'pointerup') {
     return;
@@ -516,14 +569,25 @@ function penUp(e) {
     const op = mirrorable(stampOp(b));
     commit(op);
     vibrate(12);
-    if (isFirework(op.k)) fireworkBurst(op);
+    if (isFirework(op.k)) { fireworkBurst(op); sfx('boom'); } else sfx('pop');
   } else if (tool.kind === 'brick') {
-    commit(brickOp(e));
+    if (g.pick == null) {
+      commit(brickOp(e));
+      sfx('click');
+    } else if (x < 0 || y < 0 || x > PAGE_W || y > PAGE_H) {  // dropped off the page: taken away
+      commit({ t: 'unbrick', i: g.pick });
+      sfx('unclick');
+    } else {
+      commit({ ...brickOp(e, A.ops[g.pick].k, A.ops[g.pick].c), r: g.pick });
+      sfx('click');
+    }
     vibrate(8);
+    checkModel();
   } else if (tool.kind === 'shape') {
     const h = SHAPE_TAP_SIZE / 2;
     const b = g.moved ? boxOf(g.x, g.y, x, y) : boxOf(g.x - h, g.y - h, g.x + h, g.y + h);
     commit(mirrorable({ t: 'shape', k: tool.shape, c: tool.color, w: SIZES[tool.size], b }));
+    sfx('pop');
     if (tool.color === RAINBOW) sparkleAt(b[0] + b[2] / 2, b[1] + b[3] / 2, 0, 18, Math.max(b[2], b[3]) * scale() / 2);
   } else if (tool.kind === 'bucket' && !g.moved) {
     // with a mirror, the mirror images of the tap fill too, in one operation (nonzero rule: two taps
@@ -532,7 +596,10 @@ function penUp(e) {
     for (const [px, py] of copiesOf(g.x, g.y)) loops.push(...(fillRegion(A.ops, px, py, A.base) || []));
     perfStop('seau', t0, opsInfo);
     if (loops.length) {
-      commit(tool.mirror > 1 ? { t: 'fill', c: tool.color, r: loops, z: 1 } : { t: 'fill', c: tool.color, r: loops });
+      const fill = tool.mirror > 1 ? { t: 'fill', c: tool.color, r: loops, z: 1 } : { t: 'fill', c: tool.color, r: loops };
+      if (tool.stencil) fill.s = tool.stencil;
+      commit(fill);
+      sfx('splash');
       vibrate(12);
       if (tool.color === RAINBOW) sparkleAt(g.x, g.y, 0, 20, 50);
     }
@@ -604,10 +671,38 @@ function stickerBadge(k) {
   return badge;
 }
 
+// A stencil as a sheet with its shape cut out; without a shape, the sheet alone, crossed out.
+function stencilIcon(k) {
+  const hole = STENCILS[k] || '';
+  return `<svg viewBox="-0.2 -0.2 1.4 1.4" class="shape stencil"><path d="M-.12 -.12H1.12V1.12H-.12Z${hole}"/>${hole ? '' : '<path d="M.15 .85L.85 .15"/>'}</svg>`;
+}
+
+const PLATE_ICONS = {
+  plate: '<svg viewBox="0 0 24 24" class="scenery"><path d="M5 12h4v3H5zM10 12h4v3h-4zM15 12h4v3h-4z" fill="#3f9a4f"/><rect x="2" y="15" width="20" height="4" rx="1" fill="#4aa35a"/></svg>',
+  studs: '<svg viewBox="0 0 24 24" class="scenery"><rect x="3" y="3" width="18" height="18" rx="2" fill="#4aa35a"/><g fill="#6cc27c"><circle cx="8" cy="8" r="2.6"/>'
+    + '<circle cx="16" cy="8" r="2.6"/><circle cx="8" cy="16" r="2.6"/><circle cx="16" cy="16" r="2.6"/></g></svg>',
+};
+
+// A model to build in small, in its colours; without a model, an empty frame crossed out.
+function modelIcon(k) {
+  if (!MODELS[k]) return '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" stroke-dasharray="3 3"/><path d="M7 17L17 7"/></svg>';
+  const dpr = window.devicePixelRatio || 1, c = document.createElement('canvas');
+  c.width = c.height = Math.round(40 * dpr);
+  c.className = 'sample';
+  const ctx = c.getContext('2d');
+  const boxes = MODELS[k].map(([piece, , x, y]) => brickBox({ k: piece, x, y }));
+  const x0 = Math.min(...boxes.map((b) => b[0])), x1 = Math.max(...boxes.map((b) => b[0] + b[2]));
+  const y0 = Math.min(...boxes.map((b) => b[1])) - 8, y1 = Math.max(...boxes.map((b) => b[1] + b[3]));
+  const s = c.width * 0.94 / Math.max(x1 - x0, y1 - y0);
+  ctx.setTransform(s, 0, 0, s, (c.width - (x1 - x0) * s) / 2 - x0 * s, (c.height - (y1 - y0) * s) / 2 - y0 * s);
+  drawModel(ctx, k, MODELS[k], 1);
+  return c;
+}
+
 // A brick piece in the colour in use, `unit` pixels to a stud.
 function brickIcon(k, unit) {
   const piece = PIECES[k], dpr = window.devicePixelRatio || 1, s = unit / STUD;
-  const w = piece.w * unit + 4, h = (piece.h * PLATE + 8) * s + 4;
+  const w = piece.w * unit + 4, h = (piece.top ? piece.d * STUD : piece.h * PLATE + 8) * s + 4;
   const c = document.createElement('canvas');
   c.width = Math.round(w * dpr);
   c.height = Math.round(h * dpr);
@@ -685,9 +780,14 @@ function updateGuides() {
   };
   const axes = { 1: [], 2: [90], 4: [90, 0], 6: [90, 30, 150] }[tool.mirror] || [];
   // with the bricks, a dot at every corner of the grid they snap to
-  const grid = tool.kind === 'brick' ? `<defs><pattern id="brick-grid" x="${-STUD / 2}" y="${BASE % (3 * PLATE) - 1.5 * PLATE}" width="${STUD}" height="${3 * PLATE}" patternUnits="userSpaceOnUse">`
-    + `<circle cx="${STUD / 2}" cy="${1.5 * PLATE}" r="2.4"/></pattern></defs><rect class="grid" width="${PAGE_W}" height="${PAGE_H}" fill="url(#brick-grid)"/>` : '';
-  g.innerHTML = grid + axes.map(line).join('');
+  const row = PIECES[tool.brick].top ? STUD : 3 * PLATE, low = PIECES[tool.brick].top ? PAGE_H : BASE;
+  const grid = tool.kind === 'brick' ? `<defs><pattern id="brick-grid" x="${-STUD / 2}" y="${low % row - row / 2}" width="${STUD}" height="${row}" patternUnits="userSpaceOnUse">`
+    + `<circle cx="${STUD / 2}" cy="${row / 2}" r="2.4"/></pattern></defs><rect class="grid" width="${PAGE_W}" height="${PAGE_H}" fill="url(#brick-grid)"/>` : '';
+  // a stencil veils the page around its shape
+  const [sx, sy, sw, sh] = STENCIL_BOX, place = `transform="translate(${sx} ${sy}) scale(${sw} ${sh})"`;
+  const veil = STENCILS[tool.stencil] ? `<defs><mask id="stencil-hole"><rect width="${PAGE_W}" height="${PAGE_H}" fill="#fff"/><path ${place} d="${STENCILS[tool.stencil]}" fill="#000"/></mask></defs>`
+    + `<rect class="veil" width="${PAGE_W}" height="${PAGE_H}" mask="url(#stencil-hole)"/><path class="stencil-edge" ${place} d="${STENCILS[tool.stencil]}"/>` : '';
+  g.innerHTML = veil + grid + axes.map(line).join('');
 }
 
 // Paints an element in the colour in use; a pale colour gets an outline so it shows on white.
@@ -739,11 +839,16 @@ function updateTools() {
   const brickBtn = $('#draw .tool[data-tool="brick"]');
   const unit = Math.min(15, 30 / PIECES[tool.brick].w);
   brickBtn.replaceChildren(brickIcon(tool.brick, unit));
+  const stencilBtn = $('#stencil');
+  stencilBtn.innerHTML = stencilIcon(tool.stencil);
+  stencilBtn.classList.toggle('on', Boolean(tool.stencil));
+  stencilBtn.setAttribute('aria-label', t('Pochoir'));
   const mirrorBtn = $('#mirror');
   mirrorBtn.innerHTML = mirrorIcon(tool.mirror);
   mirrorBtn.classList.toggle('on', tool.mirror > 1);
   mirrorBtn.setAttribute('aria-label', t('Miroir : {name}', { name: t(MIRROR_NAMES[tool.mirror]) }));
   updateGuides();
+  updateButtons();
   for (const b of $('#draw-colors').children) b.classList.toggle('sel', b.dataset.color === tool.color);
 }
 
@@ -751,7 +856,8 @@ function updateTools() {
 function openPop(kind, tab = '') {
   if (!pop.hidden && pop.dataset.kind === kind && !tab) { closePop(); return; }
   pop.dataset.kind = kind;
-  pop.classList.remove('grid', 'sizes', 'backgrounds', 'bricks');
+  pop.classList.remove('grid', 'sizes', 'backgrounds', 'bricks', 'stencils');
+  if (kind === 'stencil') pop.classList.add('stencils');
   pop.replaceChildren();
   if (kind === 'stamp') {
     pop.classList.add('grid');
@@ -780,12 +886,66 @@ function openPop(kind, tab = '') {
     pop.append(tabs);
   } else if (kind === 'brick') {
     pop.classList.add('bricks');
-    for (const k of BRICKS) {
+    const top = tool.brickTab === 'top';
+    for (const k of top ? TOP_BRICKS : BRICKS) {
       const b = el('button', 'tool' + (k === tool.brick ? ' sel' : ''));
-      b.append(brickIcon(k, 15));
+      b.append(brickIcon(k, top ? 12 : Math.min(15, 36 * STUD / (PIECES[k].h * PLATE + 8))));
       b.dataset.brick = k;
       b.setAttribute('aria-label', t('Brique {name}', { name: k }));
       b.addEventListener('click', () => { tool.brick = k; tool.kind = 'brick'; closePop(); updateTools(); });
+      pop.append(b);
+    }
+    // the baseplate under the bricks, on or off, and for the bricks seen from the side the models to build
+    const extras = el('div', 'extras');
+    const now = backgroundOf(A ? A.ops : []), plateKey = top ? 'studs' : 'plate', on = Boolean(now && now.k === plateKey);
+    const plate = el('button', 'tool' + (on ? ' sel' : ''));
+    plate.innerHTML = PLATE_ICONS[plateKey];
+    plate.dataset.plate = plateKey;
+    plate.setAttribute('aria-label', t('Plaque de base'));
+    plate.addEventListener('click', () => {
+      closePop();
+      if (A && !A.loading) commit(on ? { t: 'bg', k: 'paper', c: '#ffffff' } : { t: 'bg', k: plateKey });
+    });
+    extras.append(plate);
+    if (!top) {
+      const current = modelOf(A ? A.ops : []);
+      for (const m of ['', ...Object.keys(MODELS)]) {
+        const b = el('button', 'tool' + (m === current ? ' sel' : ''));
+        const icon = modelIcon(m);
+        if (typeof icon === 'string') b.innerHTML = icon; else b.append(icon);
+        b.dataset.model = m;
+        b.setAttribute('aria-label', m ? t('Modèle {name}', { name: m }) : t('Sans modèle'));
+        b.addEventListener('click', () => {
+          closePop();
+          if (A && !A.loading && m !== modelOf(A.ops)) { commit({ t: 'model', k: m }); checkModel(); }
+        });
+        extras.append(b);
+      }
+    }
+    pop.append(extras);
+    const tabs = el('div', 'tabs');
+    for (const [id, sample, name] of [['side', 'b2', 'Briques vues de côté'], ['top', 'm22', 'Briques vues de dessus']]) {
+      const b = el('button', 'tool' + (id === tool.brickTab ? ' sel' : ''));
+      b.append(brickIcon(sample, 13));
+      b.dataset.tab = id;
+      b.setAttribute('aria-label', t(name));
+      b.addEventListener('click', () => {
+        tool.brickTab = id;
+        if (Boolean(PIECES[tool.brick].top) !== (id === 'top')) tool.brick = sample;
+        tool.kind = 'brick';
+        updateTools();
+        openPop('brick', id);
+      });
+      tabs.append(b);
+    }
+    pop.append(tabs);
+  } else if (kind === 'stencil') {
+    for (const k of ['', ...Object.keys(STENCILS)]) {
+      const b = el('button', 'tool' + (k === tool.stencil ? ' sel' : ''));
+      b.innerHTML = stencilIcon(k);
+      b.dataset.stencil = k;
+      b.setAttribute('aria-label', k ? t('Pochoir {name}', { name: k }) : t('Sans pochoir'));
+      b.addEventListener('click', () => { tool.stencil = k; closePop(); updateTools(); });
       pop.append(b);
     }
   } else if (kind === 'bg') {
@@ -799,6 +959,8 @@ function openPop(kind, tab = '') {
       b.addEventListener('click', () => {
         closePop();
         if (A && !A.loading && !sameBackground(bg, backgroundOf(A.ops))) commit({ t: 'bg', ...bg });
+        // a scratch card is scratched with the eraser, wide enough to see the colours come
+        if (bg.k === 'scratch') { tool.kind = 'eraser'; tool.size = Math.max(tool.size, 2); updateTools(); }
       });
       pop.append(b);
     }
@@ -856,6 +1018,7 @@ for (const b of document.querySelectorAll('#draw .tool[data-tool]')) {
 }
 $('#size').addEventListener('click', () => openPop('size'));
 $('#mirror').addEventListener('click', () => openPop('mirror'));
+$('#stencil').addEventListener('click', () => openPop('stencil'));
 
 for (const c of [...COLORS, RAINBOW]) {
   const b = el('button', 'dot');

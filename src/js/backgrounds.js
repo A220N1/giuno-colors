@@ -8,13 +8,14 @@ export const BACKGROUNDS = [
   { k: 'paper', c: '#ffffff' }, { k: 'night' }, { k: 'sea' }, { k: 'meadow' }, { k: 'magic' },
   { k: 'snow' }, { k: 'sunset' }, { k: 'candy' },
   { k: 'village' }, { k: 'firs' }, { k: 'pole' }, { k: 'sleigh' }, { k: 'hearth' },
-  { k: 'grid' }, { k: 'dots' },
+  { k: 'scratch' }, { k: 'grid' }, { k: 'dots' },
 ];
 
 export const BG_NAMES = {
   paper: 'Page blanche', night: 'Espace', sea: 'Sous la mer', meadow: 'Prairie', magic: 'Ciel magique',
   snow: 'Neige', sunset: 'Coucher de soleil', candy: 'Gourmandises', grid: 'Carreaux', dots: 'Points',
   village: 'Village de Noël', firs: 'Sapins illuminés', pole: 'Pôle Nord', sleigh: 'Nuit de Noël', hearth: 'Coin du feu',
+  scratch: 'Carte à gratter', plate: 'Plaque de base', studs: 'Plaque de base',
 };
 
 // Patterns are shown up close on their buttons, or their lines would be thinner than a pixel.
@@ -31,10 +32,21 @@ export const sameBackground = (a, b) => (a ? a.k : 'paper') === (b ? b.k : 'pape
 
 // The colour the eraser shows while erasing: roughly the background.
 const PAPER = { night: '#1d2552', sea: '#3fa9cf', meadow: '#cdeccf', magic: '#e3c6ec', snow: '#d9e8f6', sunset: '#f4a58f', candy: '#ffe6f0',
-  village: '#2c417f', firs: '#9a72ad', pole: '#16305c', sleigh: '#22387a', hearth: '#f2dabb' };
+  village: '#2c417f', firs: '#9a72ad', pole: '#16305c', sleigh: '#22387a', hearth: '#f2dabb',
+  plate: '#dff1ff', studs: '#4aa35a' };
+// 'scratch' for the scratch card: what the eraser shows there is not one colour, see scratchPaint.
 export function paperColor(bg) {
   if (!bg || bg.k === 'paper') return bg ? bg.c : '#ffffff';
-  return PAPER[bg.k] || '#ffffff';
+  return bg.k === 'scratch' ? 'scratch' : PAPER[bg.k] || '#ffffff';
+}
+
+// The scratch card: bright colours under a black coat that covers the page (art.js lays the coat under
+// everything drawn). The eraser scratches the coat off; its stroke in progress is painted with this.
+export const SCRATCH_COAT = '#17171d';
+export function scratchPaint(ctx) {
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  for (let i = 0; i <= 12; i++) g.addColorStop(i / 12, `hsl(${(i * 55 + 320) % 360}, 95%, 60%)`);
+  return g;
 }
 
 function vgrad(ctx, stops, y0 = 0, y1 = H) {
@@ -801,6 +813,45 @@ function hearth(ctx) {
   gift(ctx, 706, 940, 70, 58, '#3f9b5b', '#e04a43');
 }
 
+function scratch(ctx) {
+  fillAll(ctx, scratchPaint(ctx));
+}
+
+// For the bricks seen from the side: a sky and a green baseplate along the bottom, its studs showing
+// until bricks stand on them.
+function plate(ctx) {
+  fillAll(ctx, vgrad(ctx, [[0, '#cfe9ff'], [1, '#f4fbff']]));
+  ctx.fillStyle = '#3f9a4f';
+  for (let x = 8; x < W; x += 40) ctx.fillRect(x, 984, 24, 9);
+  ctx.fillStyle = '#4aa35a';
+  ctx.fillRect(0, 992, W, 8);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+  ctx.fillRect(0, 992, W, 2);
+}
+
+// For the bricks seen from above: a baseplate covering the page, a stud in every square.
+let studTile = null;
+function studs(ctx) {
+  if (!studTile) {
+    studTile = document.createElement('canvas');
+    studTile.width = studTile.height = 80;  // twice the size of a square, to stay sharp when zoomed
+    const c = studTile.getContext('2d');
+    c.scale(2, 2);
+    c.fillStyle = '#4aa35a';
+    c.fillRect(0, 0, 40, 40);
+    c.fillStyle = 'rgba(0, 0, 0, 0.18)';
+    c.beginPath(); c.arc(21.5, 22, 12, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#55b066';
+    c.beginPath(); c.arc(20, 20, 12, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+    c.lineWidth = 2;
+    c.beginPath(); c.arc(20, 20, 8.5, Math.PI * 1.05, Math.PI * 1.55); c.stroke();
+  }
+  const pattern = ctx.createPattern(studTile, 'repeat');
+  if (pattern.setTransform) pattern.setTransform(new DOMMatrix([0.5, 0, 0, 0.5, 0, 0]));
+  fillAll(ctx, pattern);
+}
+
 function grid(ctx) {
   fillAll(ctx, '#ffffff');
   ctx.strokeStyle = '#c9dcf3';
@@ -819,7 +870,7 @@ function dots(ctx) {
   ctx.fill();
 }
 
-const PAINTERS = { night, sea, meadow, magic, snow, sunset, candy, village, firs, pole, sleigh, hearth, grid, dots };
+const PAINTERS = { night, sea, meadow, magic, snow, sunset, candy, village, firs, pole, sleigh, hearth, scratch, plate, studs, grid, dots };
 
 // Paints background `bg` (null for white paper) over the whole page, in page units.
 export function paintBackground(ctx, bg) {

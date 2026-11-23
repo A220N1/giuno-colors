@@ -32,6 +32,13 @@ run(async () => {
 
     const auto = P.filled.size;
     zonesTotal += P.zones.length; autoTotal += auto;
+    if (d.mystery) {
+      await sleep(300);  // the zones turn grey in a short fade
+      const deco = P.art.querySelector(':not(g):not([data-c])');
+      const blank = P.zones.find((z, i) => !P.filled.has(i) && !z.classList.contains('hl'));
+      check(P.svg.classList.contains('mystery') && (!deco || getComputedStyle(deco).visibility === 'hidden')
+        && (!blank || getComputedStyle(blank).fill === 'rgb(222, 222, 222)'), `${d.id}: a mystery page shows nothing of its picture`);
+    }
     P.zones.forEach((z, i) => {
       if (!P.filled.has(i)) check(P.labelEls[i], `${d.id}: zone ${i} has a number`);
     });
@@ -117,6 +124,22 @@ run(async () => {
       if (!check(P.filled.has(i), `${d.id}: tap fills zone ${i}`)) break;
     }
     check(P.filled.size === P.zones.length, `${d.id}: every zone filled (${P.filled.size}/${P.zones.length})`);
+    if (d.mystery) check(!P.svg.classList.contains('mystery'), `${d.id}: the mystery page shows once coloured`);
+    if (n === 1) {
+      // fill styles: shaded, then glitter, then plain again; kept for the child
+      const fillOf = () => getComputedStyle(P.zones[0]).fill;
+      const flat = fillOf();
+      document.querySelector('#fill-style').click();
+      const shaded = fillOf();
+      document.querySelector('#fill-style').click();
+      const glitter = fillOf();
+      check(!flat.startsWith('url(') && shaded.startsWith('url(') && glitter.startsWith('url(') && shaded !== glitter && P.style === 'glitter'
+        && localStorage.getItem('giuno.fill.p1') === '"glitter"', `${d.id}: zones filled plain, shaded, then with glitter`);
+      const png = await createImageBitmap(await renderPng(d, P.filled, 300, 'glitter'));
+      check(png.width === 300, `${d.id}: PNG export with glitter`);
+      document.querySelector('#fill-style').click();
+      check(P.style === 'flat' && fillOf() === flat, `${d.id}: back to plain colours`);
+    }
     check(!document.querySelector('#bravo').hidden, `${d.id}: bravo shows`);
     const saved = JSON.parse(localStorage.getItem(`giuno.progress.p1.${d.key}`) || '[]');
     check(saved.length === P.zones.length, `${d.id}: progress saved`);

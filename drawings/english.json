@@ -6,7 +6,8 @@
     "magie": "Magic",
     "scenes": "Big scenes",
     "albums": "Old picture books",
-    "details": "Big coloring pages"
+    "details": "Big coloring pages",
+    "mystere": "Mystery pages"
   },
   "titles": {
     "01_poisson": "The fish",
@@ -23,6 +24,12 @@
     "75_foret": "The enchanted forest",
     "76_recif": "The coral reef",
     "102_chat_corbeille": "The cat and the basket",
-    "103_canards_grenouille": "The ducks and the frog"
+    "103_canards_grenouille": "The ducks and the frog",
+    "77_dragons": "The valley of the dragons",
+    "78_licornes": "The land of the unicorns",
+    "79_noel": "The Christmas village",
+    "90_pirates": "The pirate ship",
+    "91_dinosaures": "The dinosaurs",
+    "92_cirque": "The circus"
   }
 }

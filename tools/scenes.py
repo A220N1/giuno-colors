@@ -775,6 +775,342 @@ SCENES = {
 }
 
 
+# ---- the very big pages and the mystery pages
+
+import random  # noqa: E402
+
+
+def wall(x, y, w, h, rows, cols, colors):
+    """Wall of bricks in staggered rows, each brick a zone."""
+    layers, bh, bw = [], h / rows, w / cols
+    for r in range(rows):
+        off = 0.5 * (r % 2)
+        xs = sorted({0.0, float(w)} | {round((k + off) * bw, 1) for k in range(cols + 1) if 0 < (k + off) * bw < w})
+        for i, (a, b) in enumerate(zip(xs, xs[1:])):
+            layers.append(zone(rect(round(x + a, 1), round(y + r * bh, 1), round(b - a, 1), round(bh, 1)), colors[(r + i) % len(colors)]))
+    return layers
+
+
+def battlements(x, y, w, n, h, color):
+    """Merlons along the top of a wall."""
+    step = w / (2 * n - 1)
+    return [zone(rect(round(x + 2 * k * step, 1), y - h, round(step, 1), h), color) for k in range(n)]
+
+
+def tower(x, y, w, h, rows, cols, stones, roof, window):
+    """Round tower seen from the front: stones, merlons, a pointed roof and a lit window."""
+    return [*wall(x, y, w, h, rows, cols, stones), *battlements(x - 6, y, w + 12, 4, 18, stones[0]),
+            zone(path([(x - 14, y - 18), (x + w / 2, y - 18 - 0.9 * w), (x + w + 14, y - 18)]), roof),
+            zone(f"M{x + w / 2 - 11} {y + 0.42 * h}V{y + 0.42 * h - 22}A11 11 0 0 1 {x + w / 2 + 11} {y + 0.42 * h - 22}V{y + 0.42 * h}Z", window)]
+
+
+def gift(x, bottom, w, h, box, ribbon):
+    """Wrapped present: a box, a ribbon and its bow."""
+    return [zone(rect(x, bottom - h, w, h), box), zone(rect(x + w / 2 - 6, bottom - h, 12, h), ribbon),
+            zone(ellipse(x + w / 2 - 10, bottom - h - 7, 10, 7), ribbon), zone(ellipse(x + w / 2 + 10, bottom - h - 7, 10, 7), ribbon)]
+
+
+def flames(cx, bottom, w, h, colors):
+    """A fire: flames one inside the other."""
+    def one(s):
+        return (f"M{cx - w * s / 2:.0f} {bottom}C{cx - w * s * 0.7:.0f} {bottom - h * s * 0.5:.0f} {cx - w * s * 0.1:.0f} {bottom - h * s * 0.6:.0f} "
+                f"{cx + w * s * 0.05:.0f} {bottom - h * s:.0f}C{cx + w * s * 0.25:.0f} {bottom - h * s * 0.6:.0f} {cx + w * s * 0.7:.0f} "
+                f"{bottom - h * s * 0.45:.0f} {cx + w * s / 2:.0f} {bottom}Z")
+    return [zone(one(s), c) for s, c in zip((1, 0.66, 0.36), colors)]
+
+
+def peak(cx, base, w, h, rock, snow):
+    """Mountain with a snow cap."""
+    return [zone(path([(cx - w / 2, base), (cx, base - h), (cx + w / 2, base)]), rock),
+            zone(path([(cx - 0.16 * w, base - 0.68 * h), (cx, base - h), (cx + 0.16 * w, base - 0.68 * h), (cx + 0.07 * w, base - 0.6 * h),
+                       (cx, base - 0.7 * h), (cx - 0.07 * w, base - 0.6 * h)]), snow)]
+
+
+def candy_cane(x, bottom, h, colors):
+    """Candy cane: a striped stick with a hook, cut into pieces coloured in turn."""
+    w, n = 0.2 * h, 6
+    layers = [zone(rect(round(x - w / 2, 1), round(bottom - (k + 1) * 0.7 * h / n, 1), round(w, 1), round(0.7 * h / n, 1)), colors[k % 2]) for k in range(n)]
+    r0, r1, cy = 0.5 * w, 1.5 * w, bottom - 0.7 * h
+    for k in range(3):
+        a0, a1 = math.pi * (1 - k / 3), math.pi * (1 - (k + 1) / 3)
+        arc = [(x + w + r * math.cos(a), cy - r * math.sin(a)) for r, aa in ((r1, (a0, (a0 + a1) / 2, a1)), (r0, (a1, (a0 + a1) / 2, a0))) for a in aa]
+        layers.append(zone(path(arc), colors[k % 2]))
+    return layers
+
+
+def heart(cx, cy, r):
+    return (f"M{cx} {cy + r:.0f}C{cx - 1.6 * r:.0f} {cy - 0.2 * r:.0f} {cx - 0.8 * r:.0f} {cy - 1.3 * r:.0f} {cx} {cy - 0.45 * r:.0f}"
+            f"C{cx + 0.8 * r:.0f} {cy - 1.3 * r:.0f} {cx + 1.6 * r:.0f} {cy - 0.2 * r:.0f} {cx} {cy + r:.0f}Z")
+
+
+def scatter(n, x0, x1, y0, y1, seed, gap):
+    """n spots in a box, none closer than gap to another: the same ones on every run."""
+    rng, spots, tries = random.Random(seed), [], 0
+    while len(spots) < n and tries < 4000:
+        tries += 1
+        s = (rng.randint(x0, x1), rng.randint(y0, y1))
+        if all((s[0] - q[0]) ** 2 + (s[1] - q[1]) ** 2 >= gap * gap for q in spots):
+            spots.append(s)
+    return spots
+
+
+def meadow(n, x0, x1, y0, y1, seed, petals, hearts=("#FCEA2B", "#D22F27")):
+    """Flowers strewn over a field."""
+    rng = random.Random(seed + 1)
+    return [layer for x, y in scatter(n, x0, x1, y0, y1, seed, 60)
+            for layer in flower(x, y, rng.choice((22, 24, 26)), rng.choice(petals), rng.choice(hearts), 5)]
+
+
+def coins(spots, r, color):
+    return [zone(ellipse(x, y, r, 0.8 * r), color) for x, y in spots]
+
+
+STONES = ("#9B9B9A", "#D0CFCE", "#9B9B9A", "#6A462F")
+PETALS = ("#FFA7C0", "#B399C8", "#F4AA41", "#61B2E4", "#D22F27")
+
+SCENES.update({
+    "details/77_dragons": {
+        "title": "La vallée des dragons",
+        **DETAILED,
+        "layers": [
+            zone(rect(0, 0, 800, 1000), "#92D3F5"),
+            sun(690, 90, 46),
+            puff(cloud(150, 110, 170)), puff(cloud(470, 70, 130)),
+            *peak(120, 430, 300, 250, "#9B9B9A", "#D0CFCE"), *peak(330, 430, 260, 190, "#6A462F", "#D0CFCE"),
+            *peak(700, 430, 320, 230, "#9B9B9A", "#D0CFCE"),
+            emo("1F30B", 540, h=210, bottom=440),
+            emo("1F409", 300, h=120, cy=170),
+            zone("M0 420C160 380 300 410 420 430C560 400 680 390 800 425L800 1000L0 1000Z", "#B1CC33"),
+            *[emo("1F332", x, h=h, bottom=b) for x, h, b in [(440, 130, 500), (500, 110, 492), (740, 150, 505), (680, 110, 490)]],
+            *wall(130, 400, 190, 170, 10, 10, STONES), *battlements(130, 400, 190, 6, 16, "#9B9B9A"),
+            zone("M190 570V500A30 30 0 0 1 250 500V570Z", "#6A462F"),
+            *tower(30, 290, 110, 280, 16, 6, STONES, "#D22F27", "#FCEA2B"),
+            *tower(310, 290, 110, 280, 16, 6, STONES, "#D22F27", "#FCEA2B"),
+            *bunting(85, 365, 300, 26, 12, ("#D22F27", "#FCEA2B", "#61B2E4", "#B399C8")),
+            emo("1F6E1", 160, h=44, cy=455), emo("1F6E1", 290, h=44, cy=455),
+            zone("M0 560C200 530 520 570 800 540L800 1000L0 1000Z", "#5C9E31"),
+            zone("M200 1000C215 880 215 700 195 570L245 570C285 700 330 880 380 1000Z", "#E8C887"),
+            *cobbles([(290, 985), (272, 945), (258, 905), (246, 865), (238, 825), (232, 785), (228, 745), (224, 705), (221, 665), (219, 625), (218, 590)],
+                     [150, 140, 128, 116, 104, 94, 84, 74, 64, 56, 48], ("#9B9B9A", "#D0CFCE")),
+            *meadow(40, 24, 776, 600, 980, 77, PETALS),
+            *[layer for x, b in scatter(14, 20, 780, 620, 990, 78, 90) for layer in tuft(x, b, 52, ("#B1CC33", "#5C9E31", "#B1CC33"))],
+            *picket_fence(430, 800, 548, 612, "#A57939", 24, 8),
+            *wall(0, 940, 180, 60, 3, 8, STONES), *wall(470, 946, 330, 54, 3, 14, STONES),
+            emo("1F409", 590, h=330, bottom=860),
+            *flames(418, 700, 70, 110, ("#D22F27", "#F4AA41", "#FCEA2B")),
+            *flames(372, 716, 44, 70, ("#D22F27", "#F4AA41", "#FCEA2B")),
+            emo("1F409", 90, h=170, bottom=760, flip=True),
+            zone(ellipse(640, 930, 130, 44), "#F4AA41"),
+            *coins([(540, 925), (572, 905), (606, 935), (640, 905), (674, 932), (708, 908), (740, 930), (590, 952), (640, 955), (690, 955),
+                    (556, 900), (724, 950)], 16, "#FCEA2B"),
+            emo("1F48E", 575, h=46, bottom=905), emo("1F48E", 700, h=42, bottom=900), emo("1F48E", 640, h=40, bottom=975),
+            emo("1F451", 640, h=64, bottom=905),
+            emo("1FABA", 120, w=120, bottom=930),
+            emo("1F95A", 95, h=44, bottom=905), emo("1F95A", 145, h=44, bottom=905),
+            *mushroom(440, 985, 44, "#D22F27", "#FCEA2B", "#E8C887"), *mushroom(30, 800, 38, "#B399C8", "#FCEA2B", "#E8C887"),
+            *mushroom(770, 990, 40, "#F4AA41", "#FCEA2B", "#E8C887"),
+            *butterfly(470, 560, 34, "#FFA7C0", "#B399C8", "#A57939"), *butterfly(30, 610, 30, "#FCEA2B", "#F4AA41", "#A57939"),
+            *butterfly(760, 700, 30, "#61B2E4", "#B399C8", "#A57939"),
+            emo("1F9B4", 330, w=60, bottom=960),
+        ],
+    },
+    "details/78_licornes": {
+        "title": "Le pays des licornes",
+        **DETAILED,
+        "layers": [
+            zone(rect(0, 0, 800, 1000), "#92D3F5"),
+            emo("1F308", 400, w=760, bottom=470),
+            sun(90, 80, 44),
+            puff(cloud(250, 90, 150)), puff(cloud(620, 110, 170)), puff(cloud(740, 250, 110)), puff(cloud(60, 270, 120)),
+            *[zone(heart(x, y, r), c) for x, y, r, c in [(400, 70, 18, "#D22F27"), (150, 190, 14, "#FFA7C0"), (680, 190, 14, "#B399C8"),
+                                                          (520, 170, 12, "#FFA7C0"), (300, 200, 12, "#D22F27"), (60, 150, 13, "#B399C8"),
+                                                          (760, 90, 13, "#D22F27"), (200, 300, 12, "#FFA7C0"), (600, 240, 12, "#D22F27"),
+                                                          (720, 560, 13, "#FFA7C0"), (30, 590, 12, "#D22F27")]],
+            *bunting(0, 800, 20, 26, 16, ("#FFA7C0", "#FCEA2B", "#B399C8", "#61B2E4", "#B1CC33")),
+            *air_balloon(110, 380, 34, 44, ("#D22F27", "#F4AA41", "#FCEA2B", "#B1CC33", "#61B2E4", "#B399C8"), "#A57939"),
+            zone("M0 470C160 420 320 450 430 470C560 430 680 420 800 460L800 1000L0 1000Z", "#B1CC33"),
+            *wall(330, 330, 180, 140, 9, 10, ("#FFA7C0", "#D0CFCE", "#B399C8")), *battlements(330, 330, 180, 6, 16, "#B399C8"),
+            zone("M395 470V420A25 25 0 0 1 445 420V470Z", "#A57939"),
+            *tower(250, 250, 96, 220, 14, 5, ("#D0CFCE", "#FFA7C0", "#D0CFCE", "#B399C8"), "#61B2E4", "#FCEA2B"),
+            *tower(494, 250, 96, 220, 14, 5, ("#D0CFCE", "#B399C8", "#D0CFCE", "#FFA7C0"), "#61B2E4", "#FCEA2B"),
+            *bunting(298, 542, 260, 24, 10, ("#FCEA2B", "#FFA7C0", "#61B2E4")),
+            *[emo("1F333", x, h=h, bottom=b) for x, h, b in [(180, 150, 500), (660, 150, 500), (740, 120, 485)]],
+            zone("M0 560C220 520 560 580 800 540L800 1000L0 1000Z", "#5C9E31"),
+            zone(ellipse(590, 700, 170, 54), "#61B2E4"),
+            *[zone(ellipse(x, y, 17, 8), "#B1CC33") for x, y in [(480, 712), (700, 690), (640, 735)]],
+            emo("1FAB7", 520, w=64, bottom=700), emo("1F9A2", 620, h=96, bottom=715),
+            zone("M330 1000C350 900 380 800 420 680L460 690C440 800 440 900 450 1000Z", "#E8C887"),
+            *cobbles([(392, 985), (396, 945), (402, 905), (408, 865), (416, 825), (424, 785), (432, 745), (440, 710)],
+                     [116, 106, 96, 86, 76, 66, 56, 46], ("#FFA7C0", "#D0CFCE", "#B399C8")),
+            *meadow(44, 24, 776, 590, 980, 78, PETALS),
+            *[layer for x, b in scatter(10, 20, 780, 640, 990, 79, 100) for layer in tuft(x, b, 44, ("#B1CC33", "#5C9E31", "#B1CC33"))],
+            *picket_fence(10, 300, 548, 604, "#D0CFCE"),
+            *lights(470, 800, 520, 22, 14, ("#FCEA2B", "#FFA7C0", "#B399C8")),
+            *bunting(0, 800, 500, 30, 14, ("#B399C8", "#FCEA2B", "#FFA7C0", "#61B2E4")),
+            emo("1F3A0", 700, h=170, bottom=640),
+            emo("1F984", 170, h=250, bottom=790),
+            emo("1F984", 590, h=200, bottom=920, flip=True),
+            emo("1F984", 330, h=130, bottom=640, flip=True),
+            emo("1F9DA", 420, h=100, cy=170), emo("1F9DA", 60, h=96, cy=520),
+            *toadstool_house(730, 880, 80, "#FFA7C0", "#FCEA2B", "#E8C887", "#A57939"),
+            *toadstool_house(70, 990, 84, "#B399C8", "#FFA7C0", "#E8C887", "#A57939"),
+            emo("1F388", 300, h=80, cy=330), emo("1F388", 540, h=70, cy=300), emo("1F388", 250, h=64, cy=400),
+            emo("1F9C1", 270, h=70, bottom=990), emo("1F36D", 480, h=84, bottom=995), emo("1F36D", 760, h=76, bottom=998),
+            *butterfly(360, 300, 40, "#FFA7C0", "#B399C8", "#A57939"), *butterfly(640, 360, 34, "#FCEA2B", "#F4AA41", "#A57939"),
+            *butterfly(40, 660, 34, "#61B2E4", "#B399C8", "#A57939"), *butterfly(770, 720, 32, "#FFA7C0", "#FCEA2B", "#A57939"),
+            *butterfly(450, 560, 30, "#B399C8", "#61B2E4", "#A57939"),
+            *[zone(star(x, y, r, 0.45 * r), "#FCEA2B") for x, y, r in [(200, 130, 16), (560, 60, 14), (720, 150, 13), (330, 120, 12),
+                                                                        (40, 180, 13), (460, 250, 12), (780, 330, 12), (20, 440, 12),
+                                                                        (130, 60, 12), (660, 40, 12), (770, 200, 12), (10, 330, 12), (560, 130, 12)]],
+            *plant(150, 905, 22, 960, "#FFA7C0", "#FCEA2B", "#B1CC33"), *plant(520, 945, 20, 995, "#B399C8", "#FCEA2B", "#B1CC33"),
+            *plant(690, 935, 20, 985, "#F4AA41", "#FCEA2B", "#B1CC33"),
+        ],
+    },
+    "details/79_noel": {
+        "title": "Le village de Noël",
+        **DETAILED,
+        "layers": [
+            zone(rect(0, 0, 800, 1000), NIGHT),
+            zone(ellipse(660, 110, 58), "#FCEA2B"),
+            *[zone(star(x, y, r, 0.45 * r), "#FCEA2B") for x, y, r in [(60, 60, 14), (170, 130, 12), (290, 50, 13), (400, 120, 12), (520, 60, 14),
+                                                                        (760, 220, 12), (40, 220, 12), (230, 230, 11), (470, 210, 12), (580, 190, 11),
+                                                                        (130, 300, 11), (350, 290, 11), (700, 310, 11), (780, 60, 12),
+                                                                        (110, 110, 11), (340, 170, 11), (450, 60, 11), (560, 290, 11), (730, 130, 11),
+                                                                        (20, 130, 11), (250, 110, 11), (600, 120, 11), (480, 330, 11), (30, 340, 11),
+                                                                        (540, 140, 11), (200, 180, 11), (320, 230, 11), (90, 20, 11), (360, 30, 11),
+                                                                        (640, 240, 11), (740, 30, 11), (430, 170, 11), (160, 60, 11), (560, 20, 11),
+                                                                        (90, 190, 11), (270, 300, 11), (500, 250, 11), (610, 330, 11), (720, 250, 11),
+                                                                        (20, 30, 11), (220, 20, 11), (480, 20, 11), (310, 150, 11), (170, 350, 11),
+                                                                        (540, 370, 11), (660, 380, 11), (410, 330, 11), (60, 390, 11),
+                                                                        (140, 150, 11), (370, 250, 11), (580, 240, 11), (760, 350, 11), (210, 60, 11),
+                                                                        (510, 190, 11)]],
+            emo("1F3D4", 150, h=230, bottom=420), emo("1F3D4", 610, h=200, bottom=410),
+            zone("M0 400C180 360 330 390 440 410C570 380 690 370 800 400L800 1000L0 1000Z", "#92D3F5"),
+            *[emo("1F332", x, h=h, bottom=b) for x, h, b in [(30, 150, 470), (110, 120, 455), (700, 140, 465), (775, 160, 475), (300, 110, 450)]],
+            emo("26EA", 400, h=210, bottom=480),
+            *building(40, 150, 470, "#D22F27", "#FCEA2B", 4, 4, 610, "#D0CFCE"),
+            *building(610, 150, 480, "#5C9E31", "#FCEA2B", 4, 4, 610, "#D0CFCE"),
+            *wall(210, 480, 140, 130, 10, 8, ("#D22F27", "#A57939", "#D22F27")), zone(path([(198, 480), (280, 416), (362, 480)]), "#D0CFCE"),
+            zone(rect(262, 548, 36, 62), "#6A462F"), zone(rect(222, 500, 28, 28), "#FCEA2B"), zone(rect(310, 500, 28, 28), "#FCEA2B"),
+            *wall(450, 490, 140, 120, 9, 8, ("#A57939", "#E8C887", "#A57939")), zone(path([(438, 490), (520, 428), (602, 490)]), "#D0CFCE"),
+            zone(rect(502, 550, 36, 60), "#6A462F"), zone(rect(462, 508, 28, 26), "#FCEA2B"), zone(rect(550, 508, 28, 26), "#FCEA2B"),
+            *lights(40, 190, 470, 14, 9, ("#D22F27", "#FCEA2B", "#B1CC33")), *lights(610, 760, 480, 14, 9, ("#FCEA2B", "#D22F27", "#61B2E4")),
+            *lights(205, 355, 480, 12, 9, ("#FCEA2B", "#B1CC33", "#61B2E4")), *lights(445, 595, 490, 12, 9, ("#D22F27", "#FCEA2B", "#B399C8")),
+            zone("M0 600C200 570 560 620 800 585L800 1000L0 1000Z", "#D0CFCE"),
+            *bunting(0, 800, 610, 30, 20, ("#D22F27", "#B1CC33", "#FCEA2B", "#61B2E4")),
+            zone("M330 1000C350 900 372 800 388 700L428 700C440 800 462 900 490 1000Z", "#E8C887"),
+            *cobbles([(410, 985), (408, 945), (406, 905), (406, 865), (406, 825), (407, 785), (408, 745), (408, 715)],
+                     [140, 126, 112, 98, 86, 74, 62, 50], ("#9B9B9A", "#A57939")),
+            *wall(0, 622, 320, 68, 5, 16, ("#9B9B9A", "#D0CFCE", "#9B9B9A", "#A57939")), *wall(490, 622, 310, 68, 5, 16, ("#9B9B9A", "#D0CFCE", "#9B9B9A", "#A57939")),
+            *picket_fence(20, 330, 720, 780, "#A57939"), *picket_fence(480, 790, 720, 780, "#A57939"),
+            *lights(0, 330, 690, 22, 11, ("#D22F27", "#FCEA2B", "#B1CC33", "#61B2E4")), *lights(480, 800, 690, 22, 11, ("#FCEA2B", "#D22F27", "#B399C8", "#B1CC33")),
+            emo("1F384", 400, h=300, bottom=745),
+            emo("1F384", 110, h=170, bottom=720), emo("1F384", 700, h=160, bottom=715),
+            *[zone(ellipse(x, y, 9), c) for x, y, c in [(30, 430, "#D22F27"), (48, 400, "#FCEA2B"), (20, 395, "#61B2E4"), (112, 425, "#FCEA2B"),
+                                                         (98, 395, "#D22F27"), (700, 430, "#FCEA2B"), (712, 395, "#D22F27"), (690, 398, "#61B2E4"),
+                                                         (775, 440, "#D22F27"), (762, 405, "#FCEA2B"), (790, 400, "#61B2E4"), (300, 425, "#D22F27"),
+                                                         (310, 398, "#FCEA2B"), (288, 400, "#61B2E4")]],
+            emo("2603", 230, h=150, bottom=900), emo("26C4", 620, h=130, bottom=880),
+            emo("1F98C", 110, h=150, bottom=930), emo("1F6F7", 150, w=120, bottom=975),
+            emo("1F385", 520, h=150, bottom=930), emo("1F936", 720, h=130, bottom=960),
+            *[layer for x, b, w, h, c, r in [(300, 800, 50, 40, "#D22F27", "#FCEA2B"), (356, 806, 44, 46, "#61B2E4", "#D22F27"),
+                                             (420, 800, 46, 38, "#B1CC33", "#D22F27"), (470, 808, 52, 48, "#B399C8", "#FCEA2B"),
+                                             (330, 990, 60, 50, "#FCEA2B", "#D22F27"), (398, 995, 52, 60, "#D22F27", "#B1CC33"),
+                                             (458, 990, 58, 46, "#61B2E4", "#FCEA2B"), (30, 995, 56, 50, "#B399C8", "#FCEA2B"),
+                                             (560, 995, 50, 44, "#B1CC33", "#FCEA2B"), (616, 992, 46, 56, "#F4AA41", "#D22F27"),
+                                             (90, 992, 50, 58, "#D22F27", "#B1CC33"), (146, 996, 44, 40, "#61B2E4", "#FCEA2B"),
+                                             (668, 996, 44, 42, "#D22F27", "#FCEA2B"), (30, 860, 46, 40, "#F4AA41", "#D22F27"),
+                                             (745, 880, 46, 44, "#B399C8", "#FCEA2B"), (640, 800, 44, 40, "#61B2E4", "#D22F27"),
+                                             (20, 800, 44, 40, "#B1CC33", "#D22F27"), (590, 800, 44, 46, "#FCEA2B", "#D22F27"),
+                                             (150, 800, 44, 40, "#D22F27", "#FCEA2B"), (720, 800, 46, 40, "#B1CC33", "#FCEA2B")]
+              for layer in gift(x, b, w, h, c, r)],
+            *candy_cane(30, 780, 90, ("#D22F27", "#D0CFCE")), *candy_cane(752, 790, 90, ("#D22F27", "#D0CFCE")),
+            *candy_cane(326, 920, 76, ("#5C9E31", "#D0CFCE")), *candy_cane(470, 920, 76, ("#D22F27", "#D0CFCE")),
+            emo("1F9F8", 275, h=90, bottom=995), emo("1F381", 700, h=80, bottom=998),
+            emo("1F514", 400, h=56, cy=640), emo("1F56F", 60, h=70, bottom=860), emo("1F56F", 760, h=70, bottom=850),
+            emo("1F36A", 205, h=44, cy=950), emo("1F36C", 540, h=44, cy=960), emo("1F36D", 250, h=70, bottom=780),
+            emo("1F47C", 300, h=70, cy=360), emo("1F31F", 400, h=70, cy=430),
+            *[zone(ellipse(x, y, r), "#D0CFCE") for x, y, r in [(90, 350, 9), (220, 330, 8), (520, 330, 8), (640, 350, 9), (760, 400, 8),
+                                                                (360, 200, 8), (100, 160, 8), (600, 250, 8), (200, 80, 8), (480, 150, 8),
+                                                                (700, 60, 8), (30, 420, 8), (560, 420, 8), (250, 400, 8), (340, 110, 8),
+                                                                (620, 30, 8), (150, 240, 8), (420, 260, 8), (770, 270, 8), (300, 350, 8),
+                                                                (60, 290, 8), (380, 80, 8), (530, 100, 8), (680, 170, 8), (250, 160, 8),
+                                                                (120, 60, 8), (450, 380, 8), (590, 60, 8)]],
+        ],
+    },
+    "mystere/90_pirates": {
+        "title": "Le bateau des pirates",
+        "mystery": True,
+        "level": 2,
+        "layers": [
+            zone(rect(0, 0, 800, 1000), "#92D3F5"),
+            sun(120, 120, 60),
+            puff(cloud(430, 110, 190)), puff(cloud(690, 190, 150)),
+            *birds((560, 90, 16), (620, 130, 12)),
+            zone("M0 560C200 530 560 580 800 545L800 1000L0 1000Z", "#4FA3E0"),
+            zone("M520 600C600 520 720 520 800 580L800 640L520 640Z", "#E8C887"),
+            emo("1F334", 660, h=250, bottom=585), emo("1F334", 750, h=190, bottom=590, flip=True),
+            *sailboat(300, 640, 330, ("#A57939", "#6A462F"), ("#D0CFCE", "#D22F27"), "#D22F27"),
+            emo("1F99C", 470, h=110, cy=330),
+            zone("M0 700C220 670 560 720 800 690L800 1000L0 1000Z", "#1E63A8"),
+            *striped_fish(170, 800, 150, ("#F4AA41", "#FCEA2B", "#F4AA41", "#FCEA2B"), "#D22F27"),
+            *striped_fish(600, 860, 130, ("#B399C8", "#FFA7C0", "#B399C8"), "#B399C8", flip=True),
+            emo("1F40B", 420, h=150, cy=790),
+            emo("1F48E", 700, h=70, bottom=640), emo("1F980", 590, h=70, bottom=650),
+            zone("M0 940C220 915 560 955 800 925L800 1000L0 1000Z", "#E8C887"),
+            emo("2693", 110, h=110, bottom=985), emo("1F41A", 330, h=70, bottom=990),
+            *shell(570, 992, 60, 200, 340, ("#FFA7C0", "#F4AA41", "#FFA7C0", "#F4AA41", "#FFA7C0")),
+        ],
+    },
+    "mystere/91_dinosaures": {
+        "title": "Les dinosaures",
+        "mystery": True,
+        "level": 2,
+        "layers": [
+            zone(rect(0, 0, 800, 1000), "#92D3F5"),
+            sun(110, 110, 56),
+            puff(cloud(380, 90, 170)),
+            *peak(150, 480, 330, 240, "#9B9B9A", "#D0CFCE"),
+            emo("1F30B", 600, h=330, bottom=500),
+            zone("M0 470C200 430 520 480 800 450L800 1000L0 1000Z", "#B1CC33"),
+            emo("1F334", 70, h=260, bottom=600), emo("1F334", 740, h=230, bottom=600, flip=True),
+            zone(ellipse(250, 660, 190, 52), "#61B2E4"),
+            emo("1F40A", 240, w=190, bottom=690),
+            zone("M0 700C220 670 560 730 800 690L800 1000L0 1000Z", "#5C9E31"),
+            emo("1F995", 560, h=360, bottom=880),
+            emo("1F996", 200, h=260, bottom=960, flip=True),
+            emo("1FABA", 660, w=130, bottom=985), emo("1F95A", 635, h=50, bottom=960), emo("1F95A", 690, h=50, bottom=960),
+            emo("1F9B4", 420, w=80, bottom=975),
+            *flower(60, 930, 22, "#FFA7C0", "#FCEA2B"), *flower(470, 900, 20, "#B399C8", "#FCEA2B", 6),
+            *flower(360, 760, 18, "#F4AA41", "#D22F27"), *flower(770, 760, 18, "#FFA7C0", "#FCEA2B", 6),
+            *[layer for x, b in [(120, 780), (340, 990), (520, 760), (760, 900)] for layer in tuft(x, b, 50, ("#B1CC33", "#5C9E31", "#B1CC33"))],
+            *butterfly(430, 330, 44, "#F4AA41", "#FCEA2B", "#A57939"),
+        ],
+    },
+    "mystere/92_cirque": {
+        "title": "Le cirque",
+        "mystery": True,
+        "level": 2,
+        "layers": [
+            zone(rect(0, 0, 800, 1000), NIGHT),
+            *[zone(star(x, y, r, 0.45 * r), "#FCEA2B") for x, y, r in [(70, 70, 18), (220, 130, 14), (590, 60, 16), (740, 150, 15),
+                                                                        (400, 40, 13), (40, 260, 13), (770, 330, 13)]],
+            emo("1F3AA", 400, h=440, bottom=560),
+            *bunting(0, 800, 150, 40, 12, ("#D22F27", "#FCEA2B", "#61B2E4", "#B1CC33")),
+            zone("M0 540C200 515 600 515 800 540L800 1000L0 1000Z", "#E8C887"),
+            zone(ellipse(400, 800, 330, 120), "#D22F27"), zone(ellipse(400, 800, 270, 92), "#FCEA2B"),
+            emo("1F418", 250, h=250, bottom=820),
+            emo("1F981", 590, h=200, bottom=800),
+            emo("1F921", 420, h=170, bottom=960),
+            emo("1F412", 720, h=130, bottom=960),
+            emo("1F388", 80, h=130, cy=420), emo("1F388", 150, h=110, cy=500), emo("1F388", 700, h=120, cy=440),
+            emo("1F3A9", 110, h=90, bottom=960), emo("1F941", 240, h=90, bottom=985), emo("1F3BA", 600, w=120, bottom=975),
+            *lights(60, 740, 590, 20, 12, ("#FCEA2B", "#D22F27", "#61B2E4", "#B1CC33")),
+        ],
+    },
+})
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sources", type=Path, help="folder of OpenMoji colour SVGs named <hexcode>.svg")

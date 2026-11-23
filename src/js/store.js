@@ -48,6 +48,14 @@ export function setCurrent(id) { write('current', id); }
 export const getLang = () => (read('lang', 'fr') === 'en' ? 'en' : 'fr');
 export const setLang = (lang) => write('lang', lang);
 
+// The little sounds, on unless turned off on this device.
+export const getSound = () => read('sound', true) !== false;
+export const setSound = (on) => write('sound', Boolean(on));
+
+// How filled zones are painted for a child: 'flat', 'shade' or 'glitter'.
+export const getFillStyle = (profileId) => { const v = read(`fill.${profileId}`, 'flat'); return v === 'shade' || v === 'glitter' ? v : 'flat'; };
+export const setFillStyle = (profileId, style) => write(`fill.${profileId}`, style);
+
 // The fluidity meter of the grown-ups' corner, on or off on this device.
 export const getPerf = () => read('perf', false) === true;
 export const setPerf = (on) => write('perf', on);

@@ -34,6 +34,10 @@ run(async () => {
   check(document.querySelector('#who').textContent.includes('Alice'), 'gallery shows who is colouring');
   const cards = document.querySelectorAll('#cards .cards .card');
   check(cards.length === drawings.length, `one card per drawing (${cards.length})`);
+  const secrets = [...document.querySelectorAll('#cards .card.secret')];
+  check(secrets.length === drawings.filter((d) => d.mystery).length && secrets.length === 3
+    && secrets.every((c) => c.querySelector('.meta b').textContent === 'Coloriage mystère' && c.querySelector('svg.mystery')),
+  `${secrets.length} mystery pages keep their picture and their name to themselves`);
   const categories = new Set(drawings.map((d) => d.category));
   const headings = [...document.querySelectorAll('#cards .section')].map((h) => h.textContent);
   check(headings.length === categories.size + 1 && headings[0] === 'Mes dessins', 'free drawings first, then one heading per category');

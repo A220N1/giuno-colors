@@ -334,7 +334,8 @@ run(async () => {
   // bricks: 18 pieces, snapped to the stud grid, a second one resting on the first
   const bricks = await import('../js/bricks.js');
   pickTool('brick');
-  check(pop.querySelectorAll('[data-brick]').length === 18 && bricks.BRICKS.length === 18, '18 brick pieces');
+  check(pop.querySelectorAll('[data-brick]').length === 25 && bricks.BRICKS.length === 25, '25 brick pieces seen from the side');
+  check(pop.querySelectorAll('[data-model]').length === 5 && pop.querySelector('[data-plate="plate"]'), 'four models to build, or none, and a baseplate');
   check($('.guides .grid') !== null, 'the stud grid shows with the bricks');
   pop.querySelector('[data-brick="b2"]').click();
   pickColor(GREEN);
@@ -355,8 +356,68 @@ run(async () => {
   check(b3.k === 'p2' && b3.y === b2.y + 3, `a plate rests on the bricks (${b3.y})`);
   tap(stage, ...at(410, 955 - 96 - 22));
   check(K.ops[K.ops.length - 1].y === b3.y + 1, 'a plate rests on a plate');
+  check($('#brick-count').textContent === '4' && !$('#brick-count').hidden, 'the bricks are counted');
+  // a tap of the eraser takes a whole brick away; holding a brick picks it up, and it is laid again where the finger lifts
+  const [bx, by, bw, bh] = bricks.brickBox(b1);
+  pickTool('eraser');
+  tap(stage, ...at(bx + bw / 2, by + bh / 2));
+  const gone = K.ops[K.ops.length - 1];
+  check(gone.t === 'unbrick' && K.ops[gone.i] === b1 && bricks.liveBricks(K.ops).length === 3 && brickPixel(b1) !== GREEN, 'the eraser takes a brick away');
+  $('#undo').click();
+  check(bricks.liveBricks(K.ops).length === 4 && brickPixel(b1) === GREEN, 'and undo puts it back');
+  pickTool('brick');
+  pop.querySelector('[data-brick="p2"]').click();
+  const [rx, ry, rw, rh] = bricks.brickBox(b2);
+  await hold(stage, ...at(rx + rw / 2, ry + rh / 2), 520);
+  const moved = K.ops[K.ops.length - 1];
+  check(moved.t === 'brick' && moved.k === 'b2' && K.ops[moved.r] === b2 && bricks.liveBricks(K.ops).length === 4, 'a brick held is picked up and laid again');
+  $('#undo').click();
+  // a model shows pale under the bricks; the baseplate is a background of its own
+  pickTool('brick');
+  pop.querySelector('[data-model="rocket"]').click();
+  check(bricks.modelOf(K.ops) === 'rocket' && bricks.modelLeft(K.ops, 'rocket').length === bricks.MODELS.rocket.length, 'a model to build over');
+  pickTool('brick');
+  pop.querySelector('[data-plate="plate"]').click();
+  check(K.ops[K.ops.length - 1].k === 'plate', 'the baseplate is laid under the bricks');
+  $('#undo').click();
+  $('#undo').click();
+  // seen from above, the pieces follow a square grid
+  pickTool('brick');
+  pop.querySelector('[data-tab="top"]').click();
+  check(pop.querySelectorAll('[data-brick]').length === 14 && pop.querySelector('[data-plate="studs"]') && !pop.querySelector('[data-model]'), '14 pieces seen from above');
+  pop.querySelector('[data-brick="m22"]').click();
+  tap(stage, ...at(210, 480));
+  const tile = K.ops[K.ops.length - 1], tbox = bricks.brickBox(tile);
+  check(tile.k === 'm22' && tbox[2] === 80 && tbox[3] === 80 && tbox[1] % 40 === 0 && pixel(flat(), tbox[0] + 5, tbox[1] + 5) === RED, 'a tile seen from above on its grid');
+  $('#undo').click();
+  pickTool('brick');
+  pop.querySelector('[data-tab="side"]').click();
+  pop.querySelector('[data-brick="b2"]').click();
   for (let i = 0; i < 4; i++) $('#undo').click();
   check($('.guides .grid') !== null && K.ops[K.ops.length - 1].t !== 'brick', 'the bricks are undone');
+
+  // a stencil keeps the paint inside its shape
+  $('#stencil').click();
+  check(pop.querySelectorAll('[data-stencil]').length === 10, 'nine stencils, or none');
+  pop.querySelector('[data-stencil="circle"]').click();
+  check($('.guides .veil') && $('#stencil').classList.contains('on'), 'the stencil veils the page around its shape');
+  pickBrush('marker');
+  pickColor(BLUE);
+  const beforeStencil = [pixel(flat(), 400, 500), pixel(flat(), 40, 500)];
+  drag(stage, segment(20, 500, 780, 500, 30));
+  const cut = K.ops[K.ops.length - 1];
+  check(cut.s === 'circle' && pixel(flat(), 400, 500) === BLUE && pixel(flat(), 40, 500) === beforeStencil[1], 'paint only stays inside the stencil');
+  $('#undo').click();
+  $('#stencil').click();
+  pop.querySelector('[data-stencil=""]').click();
+  check(!$('.guides .veil') && !$('#stencil').classList.contains('on'), 'the stencil put away');
+
+  // sounds: none of them breaks anything, and they can be turned off
+  const sound = await import('../js/sound.js');
+  for (const name of ['pop', 'click', 'unclick', 'fill', 'splash', 'tick', 'nope', 'chime', 'bravo', 'boom']) sound.sfx(name);
+  sound.setSoundOn(false);
+  check(!sound.soundOn(), 'sounds turned off');
+  sound.setSoundOn(true);
   pickColor(RED);
   pickStamp('vcloud1', 'draw');
   tap(stage, ...at(600, 160));
@@ -405,7 +466,7 @@ run(async () => {
   // background: the night sky, undone
   $('#draw-bg').click();
   const tiles = [...$('#draw-pop').querySelectorAll('[data-bg]')];
-  check(tiles.length === art.BACKGROUNDS.length && tiles.length === 15, `${tiles.length} backgrounds`);
+  check(tiles.length === art.BACKGROUNDS.length && tiles.length === 16, `${tiles.length} backgrounds`);
   const popBox = $('#draw-pop').getBoundingClientRect(), stageBox = stage.getBoundingClientRect();
   check(popBox.top >= stageBox.top && popBox.bottom <= stageBox.bottom, 'the background menu fits in the drawing area');
   // every button shows its background: only the white page is plain white
@@ -428,6 +489,19 @@ run(async () => {
   const sea = pixel(flat(), 400, 400);
   check(parseInt(sea.slice(5, 7), 16) > parseInt(sea.slice(1, 3), 16) + 60, `sea background is blue (${sea})`);
   $('#undo').click();
+  // a scratch card: black all over, the eraser in hand, bright colours where it scratches
+  const sizeBefore = draw.debug.tool.size;
+  $('#draw-bg').click();
+  $('#draw-pop [data-bg="scratch"]').click();
+  check(draw.debug.tool.kind === 'eraser' && pixel(flat(), 795, 995) === '#17171d', 'a scratch card is black, with the eraser in hand');
+  drag(stage, segment(700, 980, 790, 980, 10));
+  const scratched = pixel(flat(), 760, 980);
+  check(scratched !== '#17171d' && scratched !== WHITE, `scratching shows the colours under the coat (${scratched})`);
+  $('#undo').click();
+  $('#undo').click();
+  check(pixel(flat(), 795, 995) !== '#17171d', 'the scratch card undone');
+  pickTool('brush');
+  draw.debug.tool.size = sizeBefore;
 
   // replay: the drawing draws itself again and ends as it was; a tap stops it
   const before = [[200, 60], [600, 600], [400, 860], [795, 995]].map(([x, y]) => pixel(flat(), x, y));
