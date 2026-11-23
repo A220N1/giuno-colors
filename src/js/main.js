@@ -7,8 +7,10 @@ import { showProfiles } from './profiles.js';
 import { openPlay, leavePlay } from './play.js';
 import { openDraw, leaveDraw } from './draw.js';
 import { resetLock } from './lock.js';
-import './backup.js';
+import { showStickers } from './backup.js';
 import { loadImported } from './importer.js';
+import { loadStickers } from './stickers.js';
+import { preloadStamps } from './images.js';
 import { newArtId } from './artstore.js';
 import { lang, setLanguage, translatePage } from './i18n.js';
 
@@ -99,4 +101,5 @@ addEventListener('appinstalled', () => { $('#install').hidden = true; });
 translatePage();
 // the colouring pages imported on this phone join the gallery before it shows
 try { await loadImported(); } catch (e) { console.error('imported pages not loaded:', e); }
+try { await loadStickers(); preloadStamps(); showStickers(); } catch (e) { console.error('personal stickers not loaded:', e); }
 route();

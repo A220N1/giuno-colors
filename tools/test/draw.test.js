@@ -252,27 +252,82 @@ run(async () => {
   check(pixel(img, 600, 600) === RED && pixel(img, 600, 780) !== RED && pixel(img, 420, 600) !== RED, 'a closed pencil line holds the bucket');
 
   // stickers: a tap drops one of the chosen size, a drag sizes it
+  const pop = $('#draw-pop');
+  const stampCount = () => pop.querySelectorAll('[data-stamp]').length;
+  const pickStamp = (k, tab) => { pickTool('stamp'); if (tab) pop.querySelector(`[data-tab="${tab}"]`).click(); pop.querySelector(`[data-stamp="${k}"]`).click(); };
   pickTool('stamp');
-  check($('#draw-pop').querySelectorAll('[data-stamp]').length === 50, 'sticker menu: 6 clouds and grass, 2 fireworks, 27 emojis, 15 animals');
-  $('#draw-pop [data-stamp="e2764"]').click();
+  check(stampCount() === 35 && pop.querySelectorAll('[data-tab]').length === 3 && pop.querySelector('[data-tab="draw"].sel'),
+    'sticker menu, first of three pages: 6 clouds and grass, 2 fireworks, 27 emojis');
+  pop.querySelector('[data-tab="animals"]').click();
+  check(stampCount() === 15 && !pop.hidden, 'second page: 15 animals');
+  pop.querySelector('[data-tab="xmas"]').click();
+  check(stampCount() === 36, 'third page: 36 Christmas stickers');
+  const xmas = [...pop.querySelectorAll('[data-stamp] img')];
+  await Promise.all(xmas.map((i) => i.decode().catch(() => {})));
+  const broken = xmas.filter((i) => !i.naturalWidth).map((i) => i.parentNode.dataset.stamp);
+  check(xmas.length === 36 && !broken.length, `every Christmas sticker has its picture${broken.length ? ' (missing: ' + broken.join(' ') + ')' : ''}`);
+  const tabsY = pop.querySelector('.tabs').getBoundingClientRect().bottom;
+  pop.querySelector('[data-tab="animals"]').click();
+  check(Math.abs(pop.querySelector('.tabs').getBoundingClientRect().bottom - tabsY) < 1, 'the tabs stay put from one page to the next');
+  pop.querySelector('[data-tab="xmas"]').click();
+  pop.querySelector('[data-stamp="exmas-chalet"]').click();
+  const beforeChalet = pixel(flat(), 180, 905);
+  tap(stage, ...at(180, 900));
+  check(K.ops[K.ops.length - 1].k === 'exmas-chalet', 'a tap drops a snowy chalet');
+  await waitFor(() => pixel(flat(), 180, 905) !== beforeChalet, 'chalet sticker drawn');
+  pickTool('stamp');
+  check(stampCount() === 36 && pop.querySelector('[data-tab="xmas"].sel'), 'the menu opens again on the page of the sticker in use');
+  pickTool('stamp');
+  $('#undo').click();
+
+  // a personal sticker from a pack: a picture twice as wide as high keeps its proportions in its square box
+  const stickers = await import('../js/stickers.js');
+  const images = await import('../js/images.js');
+  const wide = document.createElement('canvas');
+  wide.width = 200; wide.height = 100;
+  const wctx = wide.getContext('2d');
+  wctx.fillStyle = BLUE;
+  wctx.fillRect(0, 0, 200, 100);
+  const pack = { app: 'giuno-colors', kind: 'stickers', stickers: [{ name: 'bleu', image: wide.toDataURL('image/png') }] };
+  const got = await stickers.importStickerFile(new File([JSON.stringify(pack)], 'pack.json', { type: 'application/json' }));
+  await images.preloadStamps();
+  const mine = stickers.customStickers()[0];
+  check(got.added === 1 && mine && mine.w === 200 && mine.h === 100, 'a pack adds a personal sticker');
+  pickTool('stamp');
+  check(pop.querySelectorAll('[data-tab]').length === 4, 'the personal stickers get their own page');
+  pop.querySelector('[data-tab="mine"]').click();
+  check(stampCount() === 1, 'one personal sticker');
+  pop.querySelector(`[data-stamp="u:${mine.id}"]`).click();
+  const beforeMine = [pixel(flat(), 180, 900), pixel(flat(), 180, 850)];
+  tap(stage, ...at(180, 900));
+  const ps = K.ops[K.ops.length - 1];
+  img = flat();
+  check(ps.k === 'u:' + mine.id && pixel(img, 180, 900) === BLUE && pixel(img, 125, 900) === BLUE && pixel(img, 180, 850) === beforeMine[1],
+    'the personal sticker is drawn in its proportions');
+  await stickers.forgetSticker(mine.id);
+  img = flat();
+  check(pixel(img, 180, 900) === beforeMine[0], 'a removed sticker vanishes from the drawing');
+  $('#undo').click();
+  pickTool('stamp');
+  check(pop.querySelectorAll('[data-tab]').length === 3 && draw.debug.tool.stamp === 'vcloud1', 'its page goes with it, and another sticker is in use');
+  pickTool('stamp');
+
+  pickStamp('e2764', 'draw');
   tap(stage, ...at(400, 860));
   const st = K.ops[K.ops.length - 1];
   check(st.t === 'stamp' && st.k === 'e2764' && st.b[2] === 130, 'a tap drops a heart sticker');
   await waitFor(() => pixel(flat(), 400, 860) !== WHITE, 'heart sticker drawn');
-  pickTool('stamp');
-  $('#draw-pop [data-stamp="fox"]').click();
+  pickStamp('fox', 'animals');
   drag(stage, segment(80, 720, 230, 840, 10));
   check(K.ops[K.ops.length - 1].b[2] === 150, 'a drag sizes the sticker');
   pickColor(RED);
-  pickTool('stamp');
-  $('#draw-pop [data-stamp="vcloud1"]').click();
+  pickStamp('vcloud1', 'draw');
   tap(stage, ...at(600, 160));
   const cl = K.ops[K.ops.length - 1];
   img = flat();
   check(cl.k === 'vcloud1' && cl.c === RED && pixel(img, 600, 160) === RED, 'a cloud sticker in the colour in use');
   // a firework bursts over the page and leaves its sparks
-  pickTool('stamp');
-  $('#draw-pop [data-stamp="fwork1"]').click();
+  pickStamp('fwork1');
   tap(stage, ...at(620, 420));
   const fw = K.ops[K.ops.length - 1];
   check(fw.k === 'fwork1' && fw.c === RED && draw.debug.sparkles.busy(), 'a firework sticker bursts');

@@ -1,0 +1,20 @@
+<svg width="72" height="72" id="emoji" viewBox="0 0 72 72" xmlns="http://www.w3.org/2000/svg">
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path fill="none" stroke="#000000" stroke-width="13" d="M19 34h34"/>
+    <path fill="none" stroke="#000000" stroke-width="13" d="M36 27v18"/>
+    <path fill="none" stroke="#000000" stroke-width="13" d="M36 45l-9 13"/>
+    <path fill="none" stroke="#000000" stroke-width="13" d="M36 45l9 13"/>
+    <path fill="none" stroke="#A57939" stroke-width="9" d="M19 34h34"/>
+    <path fill="none" stroke="#A57939" stroke-width="9" d="M36 27v18"/>
+    <path fill="none" stroke="#A57939" stroke-width="9" d="M36 45l-9 13"/>
+    <path fill="none" stroke="#A57939" stroke-width="9" d="M36 45l9 13"/>
+    <path fill="none" stroke="#A57939" stroke-width="14" d="M36 28v16"/>
+    <circle cx="36" cy="18" r="9.5" fill="#A57939" stroke="#000000" stroke-width="2"/>
+    <circle cx="32.5" cy="16.5" r="1.5" fill="#000000"/>
+    <circle cx="39.5" cy="16.5" r="1.5" fill="#000000"/>
+    <path fill="none" stroke="#000000" stroke-width="1.6" d="M32 21q4 3.5 8 0"/>
+    <circle cx="36" cy="34" r="2" fill="#EA5A47"/>
+    <circle cx="36" cy="41" r="2" fill="#5C9E31"/>
+    <path fill="none" stroke="#FFFFFF" stroke-width="1.8" d="M18.5 30.5l2.5 3-2.5 3M53.5 30.5l-2.5 3 2.5 3M24.5 54l3.5 1 1.5 3.5M47.5 54l-3.5 1-1.5 3.5"/>
+  </g>
+</svg>

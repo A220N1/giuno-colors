@@ -31,12 +31,16 @@
   <button id="install" class="pill plain install" hidden data-t>Installer l'appli</button>
   <section class="parents">
     <h2 class="section" data-t>Coin des parents</h2>
-    <p class="note" data-t>Sauvegarde dans un fichier les profils, la progression et les dessins, pour les retrouver sur un autre téléphone.</p>
+    <p class="note" data-t>Sauvegarde dans un fichier les profils, la progression, les dessins et ce qui a été ajouté ici, pour les retrouver sur un autre téléphone.</p>
     <div class="row start"><button id="backup-save" class="pill plain" data-t>Sauvegarder</button><button id="backup-load" class="pill plain" data-t>Restaurer</button></div>
     <input id="backup-file" type="file" accept=".json,application/json" hidden>
     <p class="note" data-t>Un coloriage à numéros au format SVG peut être ajouté depuis un fichier. Il reste sur ce téléphone. Appui long sur sa carte pour le retirer.</p>
     <div class="row start"><button id="page-import" class="pill plain" data-t>Ajouter un coloriage</button></div>
     <input id="page-file" type="file" accept=".svg,image/svg+xml" multiple hidden>
+    <p class="note" data-t>Des images au fond transparent (PNG ou WebP), ou un pack d'autocollants, s'ajoutent aux autocollants du dessin libre. Ils restent sur ce téléphone. Appui long sur l'un d'eux pour le retirer.</p>
+    <div class="row start"><button id="sticker-import" class="pill plain" data-t>Ajouter des autocollants</button></div>
+    <div id="sticker-list" class="sticker-list" hidden></div>
+    <input id="sticker-file" type="file" accept=".json,application/json,image/png,image/webp" multiple hidden>
     <p class="note" data-t>La mesure de fluidité montre en haut de l'écran si les gestes restent fluides et combien de temps prennent les étapes lourdes. Les mesures s'effacent en fermant l'appli.</p>
     <div class="row start"><button id="perf-on" class="pill plain" data-t>Mesurer la fluidité</button><button id="perf-off" class="pill plain" hidden data-t>Arrêter la mesure</button><button id="perf-share" class="pill plain" hidden data-t>Partager les mesures</button></div>
   </section>

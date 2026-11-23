@@ -7,8 +7,9 @@
 //   { t: 'erase', w, p: [...] }                     eraser stroke, clears both layers
 //   { t: 'shape', k, c, w, b: [x, y, width, height] }
 //   { t: 'fill', c, r: [[x0, y0, x1, y1, ...], ...] } closed loops, even-odd rule
-//   { t: 'stamp', k, b: [x, y, width, height], c? }  sticker: 'e' + OpenMoji code, a profile animal, or
-//                                                    a cloud or tuft of grass ('vcloud1'…) in colour c
+//   { t: 'stamp', k, b: [x, y, width, height], c? }  sticker: 'e' + picture name, a profile animal,
+//                                                    'u:' + id of a personal one, or a cloud or tuft of
+//                                                    grass ('vcloud1'…) in colour c
 //   { t: 'bg', k, c? }                              page background (see backgrounds.js), the last one counts
 //   { t: 'smudge', w, p: [...] }                    finger: spreads the paint of both layers along it
 //   { t: 'flakes', k: 'snow' | 'glitter', c, s, n }  n flakes over the page from a shake, placed from seed s
@@ -158,7 +159,11 @@ function drawStamp(ctx, op) {
   const img = stampImage(op.k);
   if (!img) return;
   const [x, y, w, h] = op.b;
-  if (!isAnimal(op.k)) { ctx.drawImage(img, x, y, w, h); return; }
+  if (!isAnimal(op.k)) {  // a picture that is not square keeps its proportions inside the box
+    const iw = img.naturalWidth || w, ih = img.naturalHeight || h, k = Math.min(w / iw, h / ih);
+    ctx.drawImage(img, x + (w - iw * k) / 2, y + (h - ih * k) / 2, iw * k, ih * k);
+    return;
+  }
   ctx.save();  // the animals are round stickers
   ctx.beginPath();
   ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);

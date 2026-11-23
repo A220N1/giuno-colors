@@ -73,8 +73,8 @@ const EN = {
   'Tampons': 'Stickers',
   'Voir toute la page': 'Show the whole page',
   'Coin des parents': "Grown-ups' corner",
-  'Sauvegarde dans un fichier les profils, la progression et les dessins, pour les retrouver sur un autre téléphone.':
-    'Saves the profiles, progress and drawings in a file, to find them again on another phone.',
+  'Sauvegarde dans un fichier les profils, la progression, les dessins et ce qui a été ajouté ici, pour les retrouver sur un autre téléphone.':
+    'Saves the profiles, progress, drawings and what was added here in a file, to find them again on another phone.',
   'Sauvegarder': 'Save',
   'Restaurer': 'Restore',
   "Ce fichier n'est pas une sauvegarde de Giuno Colors.": 'This file is not a Giuno Colors backup.',
@@ -88,6 +88,18 @@ const EN = {
   'Pas un coloriage à numéros : {names}': 'Not a color-by-number page: {names}',
   'Retirer « {title} » de ce téléphone ?': 'Remove "{title}" from this phone?',
   'Retirer': 'Remove',
+  "Des images au fond transparent (PNG ou WebP), ou un pack d'autocollants, s'ajoutent aux autocollants du dessin libre. Ils restent sur ce téléphone. Appui long sur l'un d'eux pour le retirer.":
+    'Pictures with a transparent background (PNG or WebP), or a sticker pack, join the stickers of the free drawing. They stay on this phone. Hold one of them to remove it.',
+  'Ajouter des autocollants': 'Add stickers',
+  'Autocollants ajoutés : {n}': 'Stickers added: {n}',
+  'Déjà sur ce téléphone : {n}': 'Already on this phone: {n}',
+  "Ni une image ni un pack d'autocollants : {names}": 'Neither a picture nor a sticker pack: {names}',
+  'Retirer cet autocollant de ce téléphone ? Il disparaîtra des dessins où il est collé.':
+    'Remove this sticker from this phone? It will vanish from the drawings it is stuck on.',
+  'Dessins': 'Pictures',
+  'Animaux': 'Animals',
+  'Noël': 'Christmas',
+  'Mes autocollants': 'My stickers',
   "La mesure de fluidité montre en haut de l'écran si les gestes restent fluides et combien de temps prennent les étapes lourdes. Les mesures s'effacent en fermant l'appli.":
     'The fluidity meter shows at the top of the screen whether gestures stay smooth and how long the heavy steps take. The measurements are lost when the app is closed.',
   'Mesurer la fluidité': 'Measure fluidity',
