@@ -146,7 +146,7 @@ canvas.thumb { aspect-ratio: 4 / 5; }
 .toolrow .tool { width: clamp(34px, calc((100vw - 72px) / 9), 52px); height: clamp(34px, calc((100vw - 72px) / 9), 52px); }
 .toolrow .tool > canvas.sample, .toolrow .tool > img.sample { max-width: 88%; height: auto; }
 .toolrow .tool[hidden] { display: none !important; }
-.tool img.sample, .tool canvas.sample.stamp { width: 36px; height: 36px; display: block; }
+.tool img.sample, .tool canvas.sample.stamp { width: 36px; height: 36px; display: block; object-fit: contain; }
 .tool img.sample.round { border-radius: 50%; }
 .tool.more { position: relative; }
 .tool.more::after { content: ''; position: absolute; right: 5px; bottom: 5px; border: 4px solid transparent; border-right-color: var(--muted); border-bottom-color: var(--muted); }
@@ -158,6 +158,13 @@ canvas.thumb { aspect-ratio: 4 / 5; }
 .pop.backgrounds span { font-size: 10.5px; line-height: 1.15; color: var(--muted); text-align: center; }
 .pop.grid { display: grid; grid-template-columns: repeat(6, 48px); max-height: 46vh; overflow-y: auto; }
 .pop.grid .tool { width: 48px; height: 48px; }
+.pop.grid .tabs { grid-column: 1 / -1; position: sticky; bottom: -8px; z-index: 1; display: flex; justify-content: center; gap: 6px; margin-bottom: -8px; padding: 6px 0 8px; border-top: 1px solid #e8e8e8; background: #fff; }
+.pop.grid .tabs .tool { width: 56px; height: 44px; border-radius: 14px; }
+.pop.grid .tabs .tool.sel { background: #e1eafb; box-shadow: none; }
+.pop.grid .tabs img.sample, .pop.grid .tabs canvas.sample.stamp { width: 30px; height: 30px; }
+.sticker-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.sticker-list .sticker { width: 64px; height: 64px; padding: 4px; border-radius: 12px; background: #fff; box-shadow: 0 0 0 1px #e4e0d6; }
+.sticker-list img { width: 100%; height: 100%; object-fit: contain; display: block; }
 #draw-stage.replaying { cursor: pointer; }
 .tool.sel { background: #fff; box-shadow: 0 0 0 2.5px var(--ink); }
 .tool svg { width: 30px; height: 30px; fill: none; stroke: var(--ink); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
@@ -180,6 +187,7 @@ canvas.thumb { aspect-ratio: 4 / 5; }
   .colorgrid { grid-template-columns: repeat(17, 32px); gap: 6px; width: auto; }
   .dot { width: 32px; height: 32px; }
   .tool { width: 46px; height: 46px; }
+  .pop.grid { grid-template-columns: repeat(9, 48px); max-height: calc(100% - 20px); }
 }
 
 .lock { position: relative; }

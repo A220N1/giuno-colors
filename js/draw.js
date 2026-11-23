@@ -6,7 +6,7 @@ import { PAGE_W, PAGE_H, SIZES, COLORS, SHAPES, RAINBOW, RAINBOW_LEN, MIRRORS, B
 import { getArt, putArt, deleteArt } from './artstore.js';
 import { sharePng, canvasPng } from './share.js';
 import { sparkler } from './sparkles.js';
-import { STAMPS, stampUrl, isAnimal, isNature, prepareArt, preloadStamps } from './images.js';
+import { STAMPS, stampUrl, stampGroups, isAnimal, isNature, isCustom, customSticker, prepareArt, preloadStamps } from './images.js';
 import { isFirework, flakesOf } from './nature.js';
 import { t } from './i18n.js';
 import { perfScene, perfStart, perfStop, count } from './perf.js';
@@ -663,7 +663,13 @@ function sizeLine(i) {
   return line;
 }
 
+// A personal sticker may have been removed since it was picked.
+function checkStamp() {
+  if (isCustom(tool.stamp) && !customSticker(tool.stamp)) tool.stamp = STAMPS[0];
+}
+
 function updateTools() {
+  checkStamp();
   for (const b of document.querySelectorAll('#draw .tool[data-tool]')) b.classList.toggle('sel', b.dataset.tool === tool.kind);
   const brushBtn = $('#draw .tool[data-tool="brush"]');
   brushBtn.replaceChildren(brushSample(tool.brush));
@@ -683,20 +689,37 @@ function updateTools() {
   for (const b of $('#draw-colors').children) b.classList.toggle('sel', b.dataset.color === tool.color);
 }
 
-function openPop(kind) {
-  if (!pop.hidden && pop.dataset.kind === kind) { closePop(); return; }
+// `tab`: the page of the sticker menu to show, when a tab was tapped.
+function openPop(kind, tab = '') {
+  if (!pop.hidden && pop.dataset.kind === kind && !tab) { closePop(); return; }
   pop.dataset.kind = kind;
   pop.classList.remove('grid', 'sizes', 'backgrounds');
   pop.replaceChildren();
   if (kind === 'stamp') {
     pop.classList.add('grid');
-    for (const k of STAMPS) {
+    checkStamp();
+    // the menu opens on the page of the sticker in use; the tabs sit at the bottom, where they stay
+    // put whatever the number of stickers above them
+    const groups = stampGroups();
+    const has = (g) => g.keys.includes(tool.stamp);
+    const group = groups.find((g) => g.id === tab) || groups.find((g) => g.id === tool.stampTab && has(g)) || groups.find(has) || groups[0];
+    for (const k of group.keys) {
       const b = el('button', 'tool' + (k === tool.stamp ? ' sel' : ''));
       b.append(stampIcon(k));
       b.dataset.stamp = k;
-      b.addEventListener('click', () => { tool.stamp = k; tool.kind = 'stamp'; closePop(); updateTools(); });
+      b.addEventListener('click', () => { tool.stamp = k; tool.stampTab = group.id; tool.kind = 'stamp'; closePop(); updateTools(); });
       pop.append(b);
     }
+    const tabs = el('div', 'tabs');
+    for (const g of groups) {
+      const b = el('button', 'tool' + (g === group ? ' sel' : ''));
+      b.append(stampIcon(g.icon));
+      b.dataset.tab = g.id;
+      b.setAttribute('aria-label', t(g.name));
+      b.addEventListener('click', () => openPop('stamp', g.id));
+      tabs.append(b);
+    }
+    pop.append(tabs);
   } else if (kind === 'bg') {
     pop.classList.add('backgrounds');
     const current = backgroundOf(A ? A.ops : []);

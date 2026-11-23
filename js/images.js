@@ -1,7 +1,9 @@
-// Pictures drawn into free drawings: stickers (OpenMoji emojis and the profile animals) and the
-// outlines of a colouring page painted freely. Each loads once; a drawing waits for its own.
+// Pictures drawn into free drawings: stickers (OpenMoji emojis, the profile animals, the Christmas
+// set and the personal ones) and the outlines of a colouring page painted freely. Each loads once; a
+// drawing waits for its own.
 import { drawings } from './drawings.js';
 import { NATURE_STAMPS, isNature } from './nature.js';
+import { customStickers, customKey, customSticker, isCustom } from './stickers.js';
 
 const PAGE_W = 800, PAGE_H = 1000;
 const OUTLINE_PX = 2;  // pixels per page unit of a colouring page's outlines
@@ -12,16 +14,40 @@ export const EMOJI_STAMPS = [
 ];
 export const ANIMAL_STAMPS = ['fox', 'cat', 'rabbit', 'bear', 'owl', 'hedgehog', 'fawn', 'squirrel', 'mouse', 'frog',
   'red-panda', 'dog', 'seal', 'duck', 'lamb'];
-// Clouds and grass first (drawn as shapes, in the colour in use), then emojis keyed 'e' + their code,
-// then the animals by their name.
-export const STAMPS = [...NATURE_STAMPS, ...EMOJI_STAMPS.map((c) => 'e' + c), ...ANIMAL_STAMPS];
+// Christmas: OpenMoji emojis by their code, and the stickers drawn for the app in the same style.
+export const XMAS_STAMPS = [
+  '1F384', '1F385', '1F936', 'xmas-elf', 'xmas-reindeer', '1F98C',
+  'xmas-chalet', 'xmas-snowy-fir', '1F332', '2603', '2744', 'xmas-santa-hat',
+  'xmas-sleigh', '1F6F7', 'xmas-bauble', 'xmas-stocking', 'xmas-candy-cane', 'xmas-gingerbread',
+  'xmas-wreath', 'xmas-holly', '1F514', '1F56F', '1F31F', '1F380',
+  '1F381', '1F9F8', '1F36A', '1F36C', '1F36D', '2615',
+  '1F9E3', '1F9E4', '26F8', '1F3D4', '1F47C', '1F43B-200D-2744-FE0F',
+];
+const emoji = (c) => 'e' + c;
+// Clouds and grass first (drawn as shapes, in the colour in use), then pictures keyed 'e' + their file
+// name, then the animals by their name. A personal sticker is keyed 'u:' + its id.
+export const STAMPS = [...new Set([...NATURE_STAMPS, ...EMOJI_STAMPS.map(emoji), ...ANIMAL_STAMPS, ...XMAS_STAMPS.map(emoji)])];
 export const isAnimal = (k) => ANIMAL_STAMPS.includes(k);
-export { isNature };
-export const stampUrl = (k) => (isAnimal(k) ? `avatars/${k}.svg` : `stamps/${k.slice(1)}.svg`);
+export { isNature, isCustom, customSticker };
+export const stampUrl = (k) => (isCustom(k) ? (customSticker(k) || { data: '' }).data
+  : isAnimal(k) ? `avatars/${k}.svg` : `stamps/${k.slice(1)}.svg`);
+
+// The pages of the sticker menu, each with the sticker shown on its tab; an empty page is left out.
+export function stampGroups() {
+  const mine = customStickers().map(customKey);
+  return [
+    { id: 'draw', name: 'Dessins', icon: 'e2B50', keys: [...NATURE_STAMPS, ...EMOJI_STAMPS.map(emoji)] },
+    { id: 'animals', name: 'Animaux', icon: 'fox', keys: ANIMAL_STAMPS },
+    { id: 'xmas', name: 'Noël', icon: 'e1F384', keys: XMAS_STAMPS.map(emoji) },
+    { id: 'mine', name: 'Mes autocollants', icon: mine[0], keys: mine },
+  ].filter((g) => g.keys.length);
+}
 
 const stamps = new Map();
+const MISSING = { img: null, ok: false, ready: Promise.resolve() };
 
 function loadStamp(k) {
+  if (isCustom(k) && !customSticker(k)) return MISSING;  // removed from this phone, or never on it
   let e = stamps.get(k);
   if (!e) {
     const img = new Image();
@@ -107,6 +133,8 @@ export async function prepareArt(ops, baseId) {
   return loadBase(baseId);
 }
 
+// Called again when personal stickers were loaded or added: a sticker must be ready when it is dropped.
 export function preloadStamps() {
-  return Promise.all(STAMPS.filter((k) => !isNature(k)).map((k) => loadStamp(k).ready));
+  const keys = [...STAMPS.filter((k) => !isNature(k)), ...customStickers().map(customKey)];
+  return Promise.all(keys.map((k) => loadStamp(k).ready));
 }

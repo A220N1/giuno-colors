@@ -1,21 +1,24 @@
-// Free drawings and imported colouring pages, kept in IndexedDB: a few dozen of them would not fit
-// in localStorage. Without IndexedDB they only last for the session.
+// Free drawings, imported colouring pages and personal stickers, kept in IndexedDB: a few dozen of
+// them would not fit in localStorage. Without IndexedDB they only last for the session.
 // Drawing: { id, profile, created, updated, ops, base? }   Page (store 'pages'): { id, svg, added }
+// Sticker (store 'stickers'): { id, name, data, w, h, added }
 
-const DB = 'giuno', STORE = 'art', PAGES = 'pages';
+const DB = 'giuno', STORE = 'art', PAGES = 'pages', STICKERS = 'stickers';
 const mem = new Map();
 const memPages = new Map();
+const memStickers = new Map();
 let opening = null;
 
 function open() {
   if (!opening) {
     opening = new Promise((resolve) => {
       try {
-        const q = indexedDB.open(DB, 2);
+        const q = indexedDB.open(DB, 3);
         q.onupgradeneeded = () => {
           const db = q.result;
           if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' }).createIndex('profile', 'profile');
           if (!db.objectStoreNames.contains(PAGES)) db.createObjectStore(PAGES, { keyPath: 'id' });
+          if (!db.objectStoreNames.contains(STICKERS)) db.createObjectStore(STICKERS, { keyPath: 'id' });
         };
         q.onsuccess = () => {
           q.result.onversionchange = () => q.result.close();
@@ -96,6 +99,26 @@ export async function deletePage(id) {
 export async function clearPages() {
   if (!(await open())) { memPages.clear(); return; }
   await request('readwrite', (s) => s.clear(), PAGES);
+}
+
+export async function allStickers() {
+  if (!(await open())) return [...memStickers.values()];
+  return request('readonly', (s) => s.getAll(), STICKERS);
+}
+
+export async function putSticker(record) {
+  if (!(await open())) { memStickers.set(record.id, record); return; }
+  await request('readwrite', (s) => s.put(record), STICKERS);
+}
+
+export async function deleteSticker(id) {
+  if (!(await open())) { memStickers.delete(id); return; }
+  await request('readwrite', (s) => s.delete(id), STICKERS);
+}
+
+export async function clearStickers() {
+  if (!(await open())) { memStickers.clear(); return; }
+  await request('readwrite', (s) => s.clear(), STICKERS);
 }
 
 export async function deleteArtOf(profile) {
