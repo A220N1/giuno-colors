@@ -6,7 +6,9 @@ import { storageEntries, replaceStorage } from './store.js';
 import { allArt, clearArt, putArt, allPages, clearPages, putPage, allStickers, clearStickers, putSticker } from './artstore.js';
 import { shareFile } from './share.js';
 import { t } from './i18n.js';
-import { importPage } from './importer.js';
+import { importPage, forgetPage } from './importer.js';
+import { drawings } from './drawings.js';
+import { titleOf } from './i18n.js';
 import { customStickers, importStickerFile, forgetSticker, validSticker } from './stickers.js';
 import { preloadStamps } from './images.js';
 import { route } from './main.js';
@@ -41,6 +43,11 @@ export async function restoreBackup(data) {
     if (validSticker(s)) await putSticker(s);
   }
   return true;
+}
+
+// The button that removes every added colouring page shows while there is one.
+export function showAdded() {
+  $('#page-clear').hidden = !drawings.some((d) => d.imported);
 }
 
 // The personal stickers of this phone, under the button that adds them; holding one removes it.
@@ -80,6 +87,13 @@ async function pickAndRestore(file) {
 $('#backup-save').addEventListener('click', () => saveBackup().catch((e) => console.error('backup failed:', e)));
 $('#backup-load').addEventListener('click', () => $('#backup-file').click());
 $('#page-import').addEventListener('click', () => $('#page-file').click());
+$('#page-clear').addEventListener('click', async () => {
+  const added = drawings.filter((d) => d.imported);
+  if (!added.length) return;
+  if (!(await confirmDialog(t('Retirer de ce téléphone les coloriages ajoutés ({names}) ?', { names: added.map(titleOf).join(', ') }), t('Retirer')))) return;
+  for (const d of added) await forgetPage(d.id);
+  route();
+});
 $('#page-file').addEventListener('change', async (e) => {
   const files = [...(e.target.files || [])];
   e.target.value = '';

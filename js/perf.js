@@ -1,6 +1,7 @@
 // Fluidity meter, switched on in the grown-ups' corner: how smoothly the screen follows the fingers,
 // and how long the heavy steps take. Shown at the top of the screen and shared as a text report, in
 // French only: it is a tool for whoever works on the app. Off, it costs one test per measured step.
+import { navlogText } from './navlog.js';
 import { $ } from './util.js';
 import { getPerf, setPerf } from './store.js';
 import { shareFile } from './share.js';
@@ -161,6 +162,7 @@ export function perfReport() {
   for (const [step, s] of steps) {
     lines.push(`${step} : ${s.n} ; ${ms(s.total / s.n)} ; ${ms(s.max)}${s.maxInfo ? ` (${s.maxInfo})` : ''} ; ${ms(s.last)}${s.lastInfo ? ` (${s.lastInfo})` : ''}`);
   }
+  lines.push('', 'Navigation (bouton retour) :', navlogText());
   return lines.join('\n') + '\n';
 }
 

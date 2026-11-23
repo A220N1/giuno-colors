@@ -2,8 +2,9 @@
 // stack, in the colour in use. Proportions of real bricks: a stud every 5 units for a brick 6 high,
 // three plates to a brick, a stud a sixth of a brick high.
 // A brick operation is { t: 'brick', k, c, x, y }: piece k with its left side on stud column x and
-// its underside y plates above the bottom row. Pieces seen from above (a mosaic) lie on a square grid
-// of studs instead: y then counts studs from the bottom of the page.
+// its underside y plates above the bottom row. Pieces seen from above, on a square grid of studs
+// (y then counts studs from the bottom of the page), are no longer offered; drawings that hold some
+// still show them.
 // A brick moved elsewhere is a new brick carrying r, the rank of the brick it replaces in the list of
 // operations; { t: 'unbrick', i } takes brick i away; { t: 'model', k } shows model k to build over.
 import { RAINBOW } from './brushes.js';
